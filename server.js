@@ -18,7 +18,8 @@ app.get('/api/products', (req, res) => {
 
 // פונקציה שמבצעת משיכה וניתוח של קובץ ZIP
 async function fetchAndParseZip() {
-  const zipUrl = 'https://gov.data.zip-path-here.com/sample.zip'; // כאן תכניס כתובת אמיתית
+  const zipUrl = 'https://prices.shufersal.co.il/FileObject/PriceFull/0/0/106/106_202405071511.zip'
+; // כאן תכניס כתובת אמיתית
   const response = await axios.get(zipUrl, { responseType: 'arraybuffer' });
 
   const directory = await unzipper.Open.buffer(Buffer.from(response.data));
