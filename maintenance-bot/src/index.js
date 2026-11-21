@@ -3,6 +3,7 @@ import path from 'node:path';
 import { config } from './config.js';
 import { openDb } from './db.js';
 import { createClassifier } from './classifier.js';
+import { createRulesClassifier } from './rules-classifier.js';
 import { createAgent } from './agent.js';
 import { startWhatsApp } from './whatsapp.js';
 import { startScheduler } from './scheduler.js';
@@ -15,7 +16,9 @@ const store = openDb(path.join(config.dataDir, 'maintenance.db'));
 const getGroupId = () => store.getSetting('group_id', config.groupId);
 const setGroupId = (id) => store.setSetting('group_id', id);
 
-const classify = createClassifier({ model: config.model, logger });
+const classify =
+  config.classifier === 'claude' ? createClassifier({ model: config.model, logger }) : createRulesClassifier();
+logger.info(`[agent] classifier: ${config.classifier === 'claude' ? `Claude (${config.model})` : 'offline rules'}`);
 const agent = createAgent({ store, classify, logger });
 
 // Keep recent raw messages so replies can quote them.
@@ -23,6 +26,7 @@ const rawById = new Map();
 
 const wa = startWhatsApp({
   dataDir: config.dataDir,
+  pairingPhone: config.pairingPhone,
   getGroupId,
   logger,
   onMessage: async (msg) => {

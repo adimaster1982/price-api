@@ -42,12 +42,12 @@ function extract(m) {
 
 const EXT = { image: 'jpg', audio: 'ogg', video: 'mp4', document: 'bin' };
 
-export function startWhatsApp({ dataDir, getGroupId, onMessage, logger = console }) {
+export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessage, logger = console }) {
   const authDir = path.join(dataDir, 'wa-auth');
   const mediaDir = path.join(dataDir, 'media');
   fs.mkdirSync(mediaDir, { recursive: true });
 
-  const state = { sock: null, connected: false, qrDataUrl: null, me: null };
+  const state = { sock: null, connected: false, qrDataUrl: null, pairingCode: null, me: null };
   const waLogger = pino({ level: 'warn' });
 
   async function connect() {
@@ -67,17 +67,27 @@ export function startWhatsApp({ dataDir, getGroupId, onMessage, logger = console
 
     sock.ev.on('connection.update', async (u) => {
       if (u.qr) {
-        state.qrDataUrl = await QRCode.toDataURL(u.qr);
-        logger.info('[wa] QR ready – open the dashboard /qr page and scan it with the bot phone');
+        if (pairingPhone) {
+          if (!state.pairingCode) {
+            state.pairingCode = await sock.requestPairingCode(pairingPhone);
+            logger.info(`[wa] PAIRING CODE: ${state.pairingCode}  (WhatsApp → Linked devices → Link a device → Link with phone number instead)`);
+          }
+        } else {
+          state.qrDataUrl = await QRCode.toDataURL(u.qr);
+          logger.info('[wa] scan this QR (WhatsApp → Linked devices → Link a device), or open the dashboard:');
+          logger.info(await QRCode.toString(u.qr, { type: 'terminal', small: true }));
+        }
       }
       if (u.connection === 'open') {
         state.connected = true;
         state.qrDataUrl = null;
+        state.pairingCode = null;
         state.me = sock.user;
         logger.info(`[wa] connected as ${sock.user?.id}`);
       }
       if (u.connection === 'close') {
         state.connected = false;
+        state.pairingCode = null;
         const code = u.lastDisconnect?.error?.output?.statusCode;
         if (code === DisconnectReason.loggedOut) {
           logger.error('[wa] logged out – deleting session; scan the QR again');

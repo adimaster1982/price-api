@@ -34,7 +34,7 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
   app.use('/media', express.static(wa.mediaDir, { fallthrough: false }));
 
   app.get('/api/status', (_req, res) => {
-    res.json({ connected: wa.state.connected, needsQr: !!wa.state.qrDataUrl, me: wa.state.me?.id || null, groupId: getGroupId() });
+    res.json({ connected: wa.state.connected, needsQr: !!wa.state.qrDataUrl, pairingCode: wa.state.pairingCode, me: wa.state.me?.id || null, groupId: getGroupId() });
   });
 
   app.get('/api/qr', (_req, res) => res.json({ qr: wa.state.qrDataUrl }));

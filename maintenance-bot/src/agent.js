@@ -29,7 +29,7 @@ export const HELP_TEXT = `🤖 בוט האחזקה
 • לפתיחת קריאה – פשוט כתבו את התקלה (למשל: "מכונה 7 דולפת שמן, עצרה ייצור").
 • לעדכון – ענו (Reply) להודעת הבוט או להודעה המקורית, או כתבו #מספר.
 • לסגירה – ענו "תוקן" / "סגור".
-• פקודות: !פתוחות · !סגור 12 · !עזרה
+• פקודות: !פתוחות · !קריאה 12 · !סגור 12 · !עזרה
 • אפשר גם לשאול: "מה פתוח על מכונה 12?"`;
 
 export function createAgent({ store, classify, logger = console, recentSize = 8 }) {
@@ -90,6 +90,13 @@ export function createAgent({ store, classify, logger = console, recentSize = 8 
     }
     if (/^!(עזרה|help)(?=\s|$)/i.test(text)) {
       return [{ type: 'reply', quoteId: msg.id, text: HELP_TEXT }];
+    }
+    const showCmd = text.match(/^!(?:קריאה|ticket)\s*#?(\d+)/i);
+    if (showCmd) {
+      const t = store.getTicket(Number(showCmd[1]));
+      if (!t) return [{ type: 'reply', quoteId: msg.id, text: `לא נמצאה קריאה #${showCmd[1]}` }];
+      const hist = store.events(t.id).slice(-8).map((e) => `• ${e.created_at.slice(5, 16).replace('T', ' ')} ${e.author}: ${e.text}`).join('\n');
+      return [{ type: 'reply', quoteId: msg.id, ticketId: t.id, text: `${ticketShort(t)}\n${hist}` }];
     }
     const closeCmd = text.match(/^!(?:סגור|close)\s*#?(\d+)/i);
     if (closeCmd) {

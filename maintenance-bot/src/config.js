@@ -11,12 +11,15 @@ export const config = {
 
   // WhatsApp
   groupId: env.GROUP_ID || '', // optional; can also be picked in the dashboard
+  // Link with an 8-digit pairing code instead of a QR (needed when the bot runs on the same phone)
+  pairingPhone: (env.PAIRING_PHONE || '').replace(/\D/g, ''),
   managerPhones: (env.MANAGER_PHONES || '')
     .split(',')
     .map((s) => s.replace(/\D/g, ''))
     .filter(Boolean),
 
-  // Claude
+  // Classifier: 'rules' = offline keyword rules (no cloud), 'claude' = Claude API
+  classifier: (env.CLASSIFIER || 'rules').toLowerCase(),
   model: env.CLAUDE_MODEL || 'claude-opus-5-5',
 
   // Dashboard

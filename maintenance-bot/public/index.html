@@ -82,7 +82,10 @@ async function loadStatus() {
   conn.textContent = s.connected ? '● וואטסאפ מחובר' : '● וואטסאפ מנותק';
   conn.className = 'pill ' + (s.connected ? 'on' : 'off');
   const setup = document.getElementById('setup');
-  if (!s.connected && s.needsQr) {
+  if (!s.connected && s.pairingCode) {
+    setup.hidden = false;
+    setup.innerHTML = `<b>חיבור הבוט:</b> בוואטסאפ של המספר הייעודי ← מכשירים מקושרים ← קישור מכשיר ← "קישור באמצעות מספר טלפון", והקלידו:<div style="font-size:32px;letter-spacing:4px;margin-top:8px;direction:ltr;text-align:center"><b>${esc(s.pairingCode)}</b></div>`;
+  } else if (!s.connected && s.needsQr) {
     const { qr } = await api('/api/qr');
     setup.hidden = false;
     setup.innerHTML = `<b>חיבור הבוט:</b> בטלפון של המספר הייעודי ← וואטסאפ ← מכשירים מקושרים ← קישור מכשיר, וסרקו:<br><img src="${qr}" alt="QR" style="width:260px;max-width:100%;background:#fff;padding:8px;border-radius:8px;margin-top:8px">`;
