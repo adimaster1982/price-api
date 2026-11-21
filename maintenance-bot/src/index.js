@@ -1,0 +1,50 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { config } from './config.js';
+import { openDb } from './db.js';
+import { createClassifier } from './classifier.js';
+import { createAgent } from './agent.js';
+import { startWhatsApp } from './whatsapp.js';
+import { startScheduler } from './scheduler.js';
+import { createWeb } from './web.js';
+
+const logger = console;
+fs.mkdirSync(config.dataDir, { recursive: true });
+
+const store = openDb(path.join(config.dataDir, 'maintenance.db'));
+const getGroupId = () => store.getSetting('group_id', config.groupId);
+const setGroupId = (id) => store.setSetting('group_id', id);
+
+const classify = createClassifier({ model: config.model, logger });
+const agent = createAgent({ store, classify, logger });
+
+// Keep recent raw messages so replies can quote them.
+const rawById = new Map();
+
+const wa = startWhatsApp({
+  dataDir: config.dataDir,
+  getGroupId,
+  logger,
+  onMessage: async (msg) => {
+    rawById.set(msg.id, msg.raw);
+    if (rawById.size > 500) rawById.delete(rawById.keys().next().value);
+
+    const actions = await agent.handleMessage(msg);
+    const groupId = getGroupId();
+    for (const a of actions) {
+      if (a.type === 'react') {
+        await wa.react(groupId, msg.key, a.emoji);
+      } else if (a.type === 'reply') {
+        const sentId = await wa.sendText(groupId, a.text, rawById.get(a.quoteId));
+        if (a.ticketId) store.linkMessage(sentId, a.ticketId);
+      }
+    }
+  },
+});
+
+startScheduler({ store, config, wa, getGroupId, logger });
+
+createWeb({ store, config, wa, getGroupId, setGroupId, logger }).listen(config.port, () => {
+  logger.info(`[web] dashboard on port ${config.port}`);
+  if (!config.dashboardPass) logger.warn('[web] DASHBOARD_PASS is not set – dashboard is locked');
+});

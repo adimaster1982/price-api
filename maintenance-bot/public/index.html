@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>קריאות אחזקה</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #fff; --text: #1c1f24; --muted: #667085; --line: #e3e6ea;
+    --accent: #1f6feb; --urgent: #d92d20; --normal: #dc8a00; --low: #98a2b3; --ok: #12805c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121417; --card: #1c1f24; --text: #e8eaed; --muted: #9aa3af; --line: #2c3037;
+      --accent: #5b9dff; --urgent: #ff6b5e; --normal: #f2b230; --low: #6b7280; --ok: #3cc58f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0; }
+  main { max-width: 960px; margin: 0 auto; padding: 0 16px 40px; }
+  .pill { font-size: 13px; padding: 4px 10px; border-radius: 99px; background: var(--card); border: 1px solid var(--line); }
+  .pill.on { color: var(--ok); } .pill.off { color: var(--urgent); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .tile b { display: block; font-size: 24px; } .tile span { color: var(--muted); font-size: 13px; }
+  .tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 10px; }
+  .tabs button, .btn { border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 7px 12px; border-radius: 8px; cursor: pointer; font: inherit; white-space: nowrap; }
+  .tabs button.active, .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .ticket { background: var(--card); border: 1px solid var(--line); border-inline-start: 4px solid var(--low); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+  .ticket.urgent { border-inline-start-color: var(--urgent); } .ticket.normal { border-inline-start-color: var(--normal); }
+  .ticket .top { display: flex; justify-content: space-between; gap: 8px; }
+  .ticket .meta { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  dialog { width: min(640px, 100vw - 24px); border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--text); padding: 16px; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+  input, select, textarea { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); }
+  textarea { width: 100%; }
+  .events { list-style: none; padding: 0; margin: 10px 0; max-height: 45vh; overflow: auto; }
+  .events li { border-bottom: 1px solid var(--line); padding: 6px 0; font-size: 14px; }
+  .events small { color: var(--muted); }
+  .events img { max-width: 160px; border-radius: 6px; display: block; margin-top: 4px; }
+  .empty { color: var(--muted); text-align: center; padding: 30px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🛠️ קריאות אחזקה</h1>
+  <div class="row" style="margin:0">
+    <span id="conn" class="pill">…</span>
+    <button class="btn primary" id="newBtn">+ קריאה חדשה</button>
+  </div>
+</header>
+<main>
+  <section id="setup" class="panel" hidden></section>
+  <section class="tiles" id="tiles"></section>
+  <nav class="tabs" id="tabs"></nav>
+  <section id="list"></section>
+</main>
+
+<dialog id="dlg"></dialog>
+
+<script>
+const ST = { open: 'פתוחה', in_progress: 'בטיפול', waiting_parts: 'ממתינה לחלק', closed: 'סגורה' };
+const PR = { urgent: '🔴 דחופה', normal: '🟡 רגילה', low: '⚪ נמוכה' };
+const TABS = [['active', 'פעילות'], ['open', 'פתוחות'], ['in_progress', 'בטיפול'], ['waiting_parts', 'ממתינות לחלק'], ['closed', 'סגורות'], ['', 'הכל']];
+let tab = 'active';
+try { tab = localStorage.getItem('tab') ?? 'active'; } catch {}
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const api = async (url, opts = {}) => {
+  const r = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json' } });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+};
+const fmt = (iso) => iso ? new Date(iso).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+const age = (iso) => { const h = (Date.now() - Date.parse(iso)) / 36e5; return h < 1 ? `${Math.round(h * 60)} דק'` : h < 48 ? `${Math.round(h)} ש'` : `${Math.round(h / 24)} ימים`; };
+
+async function loadStatus() {
+  const s = await api('/api/status');
+  const conn = document.getElementById('conn');
+  conn.textContent = s.connected ? '● וואטסאפ מחובר' : '● וואטסאפ מנותק';
+  conn.className = 'pill ' + (s.connected ? 'on' : 'off');
+  const setup = document.getElementById('setup');
+  if (!s.connected && s.needsQr) {
+    const { qr } = await api('/api/qr');
+    setup.hidden = false;
+    setup.innerHTML = `<b>חיבור הבוט:</b> בטלפון של המספר הייעודי ← וואטסאפ ← מכשירים מקושרים ← קישור מכשיר, וסרקו:<br><img src="${qr}" alt="QR" style="width:260px;max-width:100%;background:#fff;padding:8px;border-radius:8px;margin-top:8px">`;
+  } else if (s.connected && !s.groupId) {
+    const groups = await api('/api/groups');
+    setup.hidden = false;
+    setup.innerHTML = `<b>בחרו את קבוצת האחזקה שהבוט יעקוב אחריה:</b><div class="row"><select id="grp">${groups.map((g) => `<option value="${esc(g.id)}">${esc(g.name)} (${g.size})</option>`).join('')}</select><button class="btn primary" id="grpSave">שמור</button></div>`;
+    document.getElementById('grpSave').onclick = async () => { await api('/api/group', { method: 'POST', body: JSON.stringify({ id: document.getElementById('grp').value }) }); refresh(); };
+  } else {
+    setup.hidden = true;
+  }
+}
+
+async function loadStats() {
+  const s = await api('/api/stats?days=30');
+  const active = s.byStatus.open + s.byStatus.in_progress + s.byStatus.waiting_parts;
+  const top = s.topMachines[0];
+  document.getElementById('tiles').innerHTML = [
+    [active, 'קריאות פעילות'],
+    [s.byStatus.waiting_parts, 'ממתינות לחלק'],
+    [s.opened, 'נפתחו ב-30 יום'],
+    [s.mttrHours == null ? '—' : s.mttrHours.toFixed(1) + ' ש\'', 'זמן תיקון ממוצע'],
+    [top ? esc(top.machine) : '—', top ? `הכי הרבה תקלות (${top.n})` : 'ציוד בעייתי'],
+  ].map(([v, l]) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`).join('');
+}
+
+function renderTabs() {
+  document.getElementById('tabs').innerHTML = TABS.map(([k, l]) => `<button data-k="${k}" class="${k === tab ? 'active' : ''}">${l}</button>`).join('');
+  document.querySelectorAll('#tabs button').forEach((b) => b.onclick = () => { tab = b.dataset.k; try { localStorage.setItem('tab', tab); } catch {} renderTabs(); loadList(); });
+}
+
+async function loadList() {
+  const rows = await api('/api/tickets' + (tab ? `?status=${tab}` : ''));
+  const el = document.getElementById('list');
+  if (!rows.length) { el.innerHTML = '<div class="empty">אין קריאות להצגה</div>'; return; }
+  el.innerHTML = rows.map((t) => `
+    <div class="ticket ${t.priority}" data-id="${t.id}">
+      <div class="top"><b>#${t.id} ${esc(t.machine ? t.machine + ' – ' : '')}${esc(t.title)}</b><span>${ST[t.status]}</span></div>
+      <div class="meta">${PR[t.priority]} · דיווח: ${esc(t.reporter)} · ${t.assignee ? 'אחראי: ' + esc(t.assignee) + ' · ' : ''}נפתחה לפני ${age(t.created_at)}</div>
+    </div>`).join('');
+  el.querySelectorAll('.ticket').forEach((d) => d.onclick = () => openTicket(d.dataset.id));
+}
+
+async function openTicket(id) {
+  const t = await api('/api/tickets/' + id);
+  const dlg = document.getElementById('dlg');
+  dlg.innerHTML = `
+    <div class="row" style="justify-content:space-between"><b>#${t.id} ${esc(t.title)}</b><button class="btn" id="x">✕</button></div>
+    <div class="row">
+      <label>ציוד <input id="f_machine" value="${esc(t.machine)}" size="10"></label>
+      <label>אחראי <input id="f_assignee" value="${esc(t.assignee)}" size="10"></label>
+      <label>דחיפות <select id="f_priority">${Object.entries(PR).map(([k, v]) => `<option value="${k}" ${k === t.priority ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+    </div>
+    <div class="row">${Object.entries(ST).map(([k, v]) => `<button class="btn ${k === t.status ? 'primary' : ''}" data-status="${k}">${v}</button>`).join('')}</div>
+    <ul class="events">${t.events.map((e) => `<li><small>${fmt(e.created_at)} · ${esc(e.author)}</small><br>${esc(e.text)}${e.media_path && e.media_path.endsWith('.jpg') ? `<a href="/media/${encodeURIComponent(e.media_path)}" target="_blank"><img src="/media/${encodeURIComponent(e.media_path)}" loading="lazy"></a>` : e.media_path ? ` <a href="/media/${encodeURIComponent(e.media_path)}" target="_blank">פתח קובץ</a>` : ''}</li>`).join('')}</ul>
+    <textarea id="note" rows="2" placeholder="הוספת הערה…"></textarea>
+    <div class="row"><button class="btn primary" id="save">שמור</button></div>`;
+  dlg.showModal();
+  dlg.querySelector('#x').onclick = () => dlg.close();
+  const patch = async (body) => { await api('/api/tickets/' + t.id, { method: 'PATCH', body: JSON.stringify(body) }); };
+  dlg.querySelectorAll('[data-status]').forEach((b) => b.onclick = async () => { await patch({ status: b.dataset.status }); dlg.close(); refresh(); });
+  dlg.querySelector('#save').onclick = async () => {
+    await patch({ machine: f_machine.value, assignee: f_assignee.value, priority: f_priority.value });
+    const note = dlg.querySelector('#note').value.trim();
+    if (note) await api(`/api/tickets/${t.id}/notes`, { method: 'POST', body: JSON.stringify({ text: note }) });
+    dlg.close(); refresh();
+  };
+}
+
+document.getElementById('newBtn').onclick = () => {
+  const dlg = document.getElementById('dlg');
+  dlg.innerHTML = `<b>קריאה חדשה</b>
+    <div class="row"><input id="n_title" placeholder="תיאור התקלה" style="flex:1"></div>
+    <div class="row"><input id="n_machine" placeholder="ציוד / מכונה"><select id="n_priority">${Object.entries(PR).map(([k, v]) => `<option value="${k}" ${k === 'normal' ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+    <div class="row"><button class="btn primary" id="n_save">פתח</button><button class="btn" id="n_cancel">ביטול</button></div>`;
+  dlg.showModal();
+  dlg.querySelector('#n_cancel').onclick = () => dlg.close();
+  dlg.querySelector('#n_save').onclick = async () => {
+    if (!n_title.value.trim()) return;
+    await api('/api/tickets', { method: 'POST', body: JSON.stringify({ title: n_title.value, machine: n_machine.value, priority: n_priority.value }) });
+    dlg.close(); refresh();
+  };
+};
+
+async function refresh() {
+  try { await Promise.all([loadStatus(), loadStats(), loadList()]); } catch (e) { console.error(e); }
+}
+renderTabs();
+refresh();
+setInterval(() => { if (!document.getElementById('dlg').open) refresh(); }, 20000);
+</script>
+</body>
+</html>

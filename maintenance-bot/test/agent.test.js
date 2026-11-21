@@ -1,0 +1,87 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { openDb } from '../src/db.js';
+import { createAgent } from '../src/agent.js';
+import { IGNORE, buildUserContent } from '../src/classifier.js';
+import { findEscalations, buildDailySummary } from '../src/scheduler.js';
+
+const quiet = { info() {}, warn() {}, error() {} };
+
+function setup(decisions) {
+  const store = openDb(':memory:');
+  const calls = [];
+  const classify = async (input) => {
+    calls.push(input);
+    return { ...IGNORE, ...(decisions.shift() || {}) };
+  };
+  return { store, calls, agent: createAgent({ store, classify, logger: quiet }) };
+}
+
+const msg = (id, text, extra = {}) => ({ id, text, sender: 'יוסי', senderPhone: '972500000000', quotedId: null, media: null, ...extra });
+
+test('new ticket -> reply-to-bot update -> close', async () => {
+  const { store, agent, calls } = setup([
+    { action: 'new_ticket', title: 'דליפת שמן', machine: 'מכונה 7', priority: 'urgent' },
+    { action: 'status_change', ticket_id: 1, new_status: 'waiting_parts', assignee: 'דני', note: 'הוזמן אטם' },
+    { action: 'close', ticket_id: 1, note: 'הוחלף אטם' },
+  ]);
+
+  const [r1] = await agent.handleMessage(msg('m1', 'מכונה 7 דולפת שמן, עצרה'));
+  assert.match(r1.text, /נפתחה קריאה #1/);
+  assert.equal(store.getTicket(1).priority, 'urgent');
+  store.linkMessage('bot1', r1.ticketId); // simulate the sent announcement
+
+  const [r2] = await agent.handleMessage(msg('m2', 'מחכים לאטם', { quotedId: 'bot1' }));
+  assert.equal(calls[1].replyToTicket, 1, 'reply to bot message resolves to ticket');
+  assert.match(r2.text, /ממתינה לחלק · דני/);
+
+  const [r3] = await agent.handleMessage(msg('m3', 'תוקן', { quotedId: 'm2' }));
+  assert.match(r3.text, /קריאה #1 נסגרה/);
+  const t = store.getTicket(1);
+  assert.equal(t.status, 'closed');
+  assert.ok(t.closed_at);
+  assert.ok(store.events(1).length >= 5);
+});
+
+test('commands work without calling Claude', async () => {
+  const { store, agent, calls } = setup([]);
+  store.createTicket({ title: 'נורה שרופה', machine: 'אולם B', priority: 'low' });
+  const [list] = await agent.handleMessage(msg('a', '!פתוחות'));
+  assert.match(list.text, /#1 אולם B/);
+  const [closed] = await agent.handleMessage(msg('b', '!סגור 1'));
+  assert.match(closed.text, /נסגרה/);
+  const [none] = await agent.handleMessage(msg('c', '!סגור 1'));
+  assert.match(none.text, /לא נמצאה/);
+  assert.equal(calls.length, 0);
+});
+
+test('update to unknown ticket is skipped, ignore produces nothing', async () => {
+  const { agent } = setup([{ action: 'update', ticket_id: 99 }, { action: 'ignore' }]);
+  assert.deepEqual(await agent.handleMessage(msg('x', 'עדכון כלשהו')), []);
+  assert.deepEqual(await agent.handleMessage(msg('y', 'תודה!')), []);
+});
+
+test('caption-less photo attaches to the sender\'s recent ticket', async () => {
+  const { store, agent } = setup([{ action: 'new_ticket', title: 'צ\'ילר לא מקרר', machine: 'צ\'ילר' }]);
+  await agent.handleMessage(msg('p0', 'הצ\'ילר לא מקרר'));
+  const [r] = await agent.handleMessage(msg('p1', '', { media: { kind: 'image', path: 'p1.jpg' } }));
+  assert.equal(r.type, 'react');
+  assert.ok(store.events(1).some((e) => e.media_path === 'p1.jpg'));
+});
+
+test('escalation picks overdue urgent tickets once', () => {
+  const store = openDb(':memory:');
+  const t = store.createTicket({ title: 'x', priority: 'urgent' });
+  store.createTicket({ title: 'y', priority: 'low' });
+  const later = Date.now() + 3 * 3_600_000;
+  assert.deepEqual(findEscalations(store, { urgentHours: 2, normalHours: 48, now: later }).map((x) => x.id), [t.id]);
+  store.markEscalated(t.id);
+  assert.equal(findEscalations(store, { urgentHours: 2, normalHours: 48, now: later }).length, 0);
+  assert.match(buildDailySummary(store), /קריאות פתוחות \(2\)/);
+});
+
+test('classifier prompt includes open tickets and reply hint', () => {
+  const s = buildUserContent({ text: 'שלום', sender: 'א', replyToTicket: 3, openTickets: [], recent: [] });
+  assert.match(s, /reply_to_ticket: #3/);
+  assert.match(s, /\(none\)/);
+});

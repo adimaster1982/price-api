@@ -1,0 +1,20 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PUBLIC_URL: https://${DOMAIN}
+    volumes:
+      - ./data:/data          # מסד הנתונים, תמונות וחיבור הוואטסאפ – לגבות!
+
+  caddy:                      # HTTPS אוטומטי ללוח הבקרה
+    image: caddy:2.8
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    command: caddy reverse-proxy --from ${DOMAIN} --to bot:3000
+    volumes:
+      - caddy_data:/data
+
+volumes:
+  caddy_data:
