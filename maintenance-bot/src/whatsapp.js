@@ -57,7 +57,8 @@ export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessag
       auth,
       version,
       logger: waLogger,
-      browser: Browsers.ubuntu('Maintenance Bot'),
+      // Must be a recognised browser name: WhatsApp rejects code-pairing for unknown client types.
+      browser: Browsers.ubuntu('Chrome'),
       markOnlineOnConnect: false,
       syncFullHistory: false,
     });
