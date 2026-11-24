@@ -84,3 +84,31 @@ test('injection-molding robot terms and photo reports open tickets', async () =>
   assert.equal(photo.action, 'new_ticket');
   assert.equal((await c('מכונה 22 עובדת יפה היום')).action, 'ignore');
 });
+
+test('real messages from the factory group', async () => {
+  const cases = [
+    ['111 רנרים במוצרים', 'new_ticket', 'מכונה 111', /^רובוט – /],
+    ['תבדקו בבקשה 339 מפילה מוצרים', 'new_ticket', 'מכונה 339', /^רובוט – /],
+    ['תקלה בשסתום 447 מכונה נעצרת פעם שניה', 'new_ticket', 'מכונה 447', /שסתום/],
+    ['459 מפיל מוצרים', 'new_ticket', 'מכונה 459', /^רובוט – /],
+    ['444 נזילות יטופל לאחר הורדת תבנית.', 'new_ticket', 'מכונה 444', /נזילות/],
+    ['אין שעון אוויר לVG ב667. בבקשה לשים שעון.', 'new_ticket', 'מכונה 667', /שעון/],
+    ['יבשן לא תקין ממכונה 460.', 'new_ticket', 'מכונה 460', /יבשן/],
+  ];
+  for (const [text, action, machine, title] of cases) {
+    const d = await classify({ text, sender: 'x', replyToTicket: null, openTickets: [], recent: [] });
+    assert.equal(d.action, action, text);
+    assert.equal(d.machine, machine, text);
+    assert.match(d.title, title, text);
+  }
+  assert.equal((await c('124 + 555 נבדקו יבשנים . 2 היחידות עובדות במעקב')).action, 'ignore');
+  assert.equal((await c('אין בעיה, תודה')).action, 'ignore');
+});
+
+test('status note about machines with an open ticket becomes an update, "will be handled" does not close', async () => {
+  const tickets = [{ id: 9, machine: 'מכונה 124', title: 'יבשן', status: 'open', priority: 'normal', assignee: '', created_at: new Date().toISOString() }];
+  const d = await classify({ text: '124 + 555 נבדקו יבשנים . 2 היחידות עובדות במעקב', sender: 'x', openTickets: tickets, recent: [] });
+  assert.equal(d.action, 'update'); assert.equal(d.ticket_id, 9);
+  const e = await classify({ text: 'יטופל אחרי הורדת תבנית', sender: 'x', replyToTicket: 9, openTickets: tickets, recent: [] });
+  assert.equal(e.action, 'update');
+});
