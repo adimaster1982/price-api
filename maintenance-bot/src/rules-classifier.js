@@ -10,15 +10,19 @@ const CLOSE = /(תוקן|תוקנה|תיקנתי|תיקנו|סגור|נסגר|ל
 const WAITING = /(ממתינ|ממתין|מחכה|מחכים|הוזמן|הזמנתי|הזמנו|להזמין|חלק חילוף|ספק|חסר חלק|אין חלק)/;
 const PROGRESS = /(מטפל|בטיפול|בדרך|אני על זה|לוקח את|לקחתי|מתחיל|התחלתי|הגעתי|אגיע|עובד על זה|בודק)/;
 const FIRST_PERSON = /(^|\s)(אני|אנחנו|לקחתי|הגעתי|אגיע|התחלתי|הזמנתי|תיקנתי|סיימתי|בודק|מטפל)(\s|$)/;
-const FAULT = /(תקלה|שרוף|שרופ|מקולקל|לא תקין|לא דולק|כבה|כבוי|חסום|סתום|לא יורד|לא עולה|תקול|לא עובד|לא עובדת|לא נדלק|לא נדלקת|נתקע|תקוע|דולף|דולפת|דליפ|נוזל|שבור|נשבר|נשברה|עצר|עוצר|עומדת|עומד|רעש|חם מדי|מתחמם|לא מקרר|לא מחמם|קצר|שריפ|עשן|ריח שרוף|אזעקה|התראה|alarm|error|שגיאה|לא תופס|לא סוגר|לא פותח|בעיה|לתקן|צריך טכנאי|צריך חשמלאי|קפץ|נפל|נפלה|סדוק|נקרע|לחץ נמוך|לחץ גבוה|ברז|פיצוץ)/i;
+const FAULT = /(תקלה|שרוף|שרופ|מקולקל|לא תקין|לא דולק|כבה|כבוי|חסום|סתום|לא יורד|לא עולה|תקול|לא עובד|לא עובדת|לא נדלק|לא נדלקת|נתקע|תקוע|דולף|דולפת|דליפ|נוזל|שבור|נשבר|נשברה|עצר|עוצר|עומדת|עומד|רעש|חם מדי|מתחמם|לא מקרר|לא מחמם|קצר|שריפ|עשן|ריח שרוף|אזעקה|התראה|alarm|error|שגיאה|לא תופס|לא סוגר|לא פותח|בעיה|לתקן|צריך טכנאי|צריך חשמלאי|קפץ|נפל|נפלה|נופל|נופלות|סדוק|זורק|לא מוציא|לא שולף|לא מוריד|לא משחרר|משתחרר|רופף|מטפטף|טפטוף|נזיל|רנר|ראנר|ספרו|runner|sprue|גריפר|תפסנית|ואקום|וקום|הוט ראנר|hot runner|פלאש|flash|שורט|short|חסר מילוי|בועות|שקיעות|עיוות|נקודות שחורות|חוטים|פין שבור|פינים|נקרע|לחץ נמוך|לחץ גבוה|ברז|פיצוץ)/i;
 const URGENT = /(עצר|עוצר|עומדת|עומד|דחוף|מיידי|מייד|שריפ|עשן|קצר|חשמל|דליפ|דולף|בטיחות|סכנה|פציע|נפגע|השבת|ייצור עומד|קו עומד)/;
 const LOW = /(לא דחוף|כשיתפנה|כשיהיה זמן|נורה|ניקיון|צבע|שלט|קוסמטי)/;
 const NEW_HINT = /(עוד תקלה|תקלה נוספת|תקלה חדשה|בעיה נוספת|בנוסף)/;
 const QUERY = /^(\?|מה (פתוח|המצב|הסטטוס)|יש (משהו )?פתוח|כמה (קריאות )?פתוח|מה עם|מי מטפל|איפה עומד)/;
 
+// Words that mean the problem is in the robot / take-out (runner, sprue, gripper, vacuum).
+const ROBOT_HINT = /(רנר|ראנר|ספרו|runner|sprue|גריפר|תפסנית|ואקום|וקום|לא שולף|לא מוציא)/i;
+
 const EQUIPMENT = [
   "צ'ילר", 'צילר', 'צ׳ילר', 'מדחס', 'קומפרסור', 'מייבש', 'רובוט', 'מסוע', 'תבנית', 'מגרסה', 'טוחנת',
   'מנוף', 'מלגזה', 'מזגן', 'גנרטור', 'משאבה', 'לוח חשמל', 'מערבל', 'מטען', 'דוזר', 'ווקום', 'מגדל קירור',
+  'תפסנית', 'גריפר', 'הוט ראנר', 'בקר טמפרטורה', 'מחמם תבנית', 'מזין',
 ];
 const BRANDS = ['Engel', 'Arburg', 'KraussMaffei', 'Krauss', 'Haitian', 'Battenfeld', 'Sumitomo', 'Demag', 'Husky', 'Netstal', 'Wittmann', 'Yushin', 'Sepro', 'Negri Bossi', 'Boy', 'Fanuc'];
 
@@ -49,6 +53,7 @@ function makeTitle(text) {
 
 export function createRulesClassifier() {
   return async function classify({ text, sender, replyToTicket, openTickets }) {
+    const hasMedia = /\[מצורפת [^\]]+\]/.test(text);
     const t = text.replace(/\[מצורפת [^\]]+\]/, '').trim();
     const machine = extractMachine(t);
     const assignee = FIRST_PERSON.test(t) ? sender : '';
@@ -80,9 +85,13 @@ export function createRulesClassifier() {
       }
     }
 
-    if (has(FAULT, t) && t.length >= 6) {
+    // A fault word, or a photo with a machine name (people often just send a picture + "machine 7 ...").
+    const photoReport = hasMedia && machine && !has(CLOSE, t) && !QUERY.test(t);
+    if ((has(FAULT, t) && t.length >= 6) || photoReport) {
       const priority = has(/לא דחוף|כשיתפנה|כשיהיה זמן/, t) ? 'low' : has(URGENT, t) ? 'urgent' : has(LOW, t) ? 'low' : 'normal';
-      return { ...base, action: 'new_ticket', title: makeTitle(t), priority, assignee: '' };
+      let title = makeTitle(t);
+      if (ROBOT_HINT.test(t) && !/רובוט/.test(t)) title = `רובוט – ${title}`;
+      return { ...base, action: 'new_ticket', title, priority, assignee: '' };
     }
 
     return { ...IGNORE };

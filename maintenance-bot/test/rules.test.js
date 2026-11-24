@@ -73,3 +73,14 @@ test('end to end with the agent, offline', async () => {
   await agent.handleMessage(m('4', 'תוקן', 'bot'));
   assert.equal(store.getTicket(1).status, 'closed');
 });
+
+test('injection-molding robot terms and photo reports open tickets', async () => {
+  const d = await c('מכונה 111 רנרים נופלים [מצורפת תמונה]');
+  assert.equal(d.action, 'new_ticket');
+  assert.equal(d.machine, 'מכונה 111');
+  assert.match(d.title, /^רובוט – מכונה 111 רנרים נופלים$/);
+  assert.equal((await c('הספרו לא יורד במכונה 14')).action, 'new_ticket');
+  const photo = await c('מכונה 22 [מצורפת תמונה]');
+  assert.equal(photo.action, 'new_ticket');
+  assert.equal((await c('מכונה 22 עובדת יפה היום')).action, 'ignore');
+});
