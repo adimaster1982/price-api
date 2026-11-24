@@ -112,3 +112,9 @@ test('status note about machines with an open ticket becomes an update, "will be
   const e = await classify({ text: 'יטופל אחרי הורדת תבנית', sender: 'x', replyToTicket: 9, openTickets: tickets, recent: [] });
   assert.equal(e.action, 'update');
 });
+
+test('bare machine numbers are exactly 3 digits', () => {
+  assert.equal(extractMachine('339 מפילה מוצרים'), 'מכונה 339');
+  assert.equal(extractMachine('12 מוצרים נפלו'), '');
+  assert.equal(extractMachine('1234 נתקע'), '');
+});

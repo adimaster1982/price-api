@@ -38,9 +38,9 @@ export function extractMachine(text) {
   const nums = [];
   // "מכונה 7", "ממכונה 460", "מכ' 3"
   for (const m of text.matchAll(/(?:מכונה|מכונת|מכונות|מכ'|מ')\s*(?:מס(?:פר|'|׳)?\s*)?#?\s*(\d{1,4})/g)) nums.push(m[1]);
-  // The team usually writes just the machine number: "339 מפילה", "124 + 555", "ב667"
+  // The team usually writes just the machine number, always 3 digits: "339 מפילה", "124 + 555", "ב667"
   if (!nums.length) {
-    for (const m of text.matchAll(/(?<![\d#:.\/])(?:^|(?<=[\s(,+\-–בלמוה]))(\d{2,4})(?![\d:%\/]|\.\d)/g)) nums.push(m[1]);
+    for (const m of text.matchAll(/(?<![\d#:.\/])(?:^|(?<=[\s(,+\-–בלמוה]))(\d{3})(?![\d:%\/]|\.\d)/g)) nums.push(m[1]);
   }
   const unique = [...new Set(nums)];
   if (unique.length === 1) return `מכונה ${unique[0]}`;
