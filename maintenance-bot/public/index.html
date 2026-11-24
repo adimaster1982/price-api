@@ -24,7 +24,7 @@
   .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
   .tile b { display: block; font-size: 24px; } .tile span { color: var(--muted); font-size: 13px; }
   .tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 10px; }
-  .tabs button, .btn { border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 7px 12px; border-radius: 8px; cursor: pointer; font: inherit; white-space: nowrap; }
+  .tabs button, .btn { text-decoration: none; border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 7px 12px; border-radius: 8px; cursor: pointer; font: inherit; white-space: nowrap; }
   .tabs button.active, .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   .ticket { background: var(--card); border: 1px solid var(--line); border-inline-start: 4px solid var(--low); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
   .ticket.urgent { border-inline-start-color: var(--urgent); } .ticket.normal { border-inline-start-color: var(--normal); }
@@ -48,6 +48,7 @@
   <h1>🛠️ קריאות אחזקה</h1>
   <div class="row" style="margin:0">
     <span id="conn" class="pill">…</span>
+    <a class="btn" href="/export/unrecognized.csv" title="הודעות שהבוט לא זיהה – לשיפור הזיהוי ולרוסית בהמשך">📥 לא זוהו</a>
     <button class="btn primary" id="newBtn">+ קריאה חדשה</button>
   </div>
 </header>

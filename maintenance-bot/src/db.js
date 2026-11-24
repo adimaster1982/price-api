@@ -45,6 +45,14 @@ export function openDb(file) {
       msg_id    TEXT PRIMARY KEY,
       ticket_id INTEGER NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS unrecognized (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      text       TEXT NOT NULL,
+      sender     TEXT NOT NULL DEFAULT '',
+      lang       TEXT NOT NULL DEFAULT 'he',
+      has_media  INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -177,6 +185,20 @@ export class Store {
         .prepare(`SELECT * FROM tickets WHERE reporter_phone = ? AND created_at >= ? AND status != 'closed' ORDER BY id DESC LIMIT 1`)
         .get(phone, since) || null
     );
+  }
+
+  // ---- messages the bot did not turn into a ticket (for tuning / future Russian support) ----
+  addUnrecognized(text, sender, hasMedia = false) {
+    const lang = /[\u0400-\u04FF]/.test(text) ? 'ru' : 'he';
+    this.db
+      .prepare('INSERT INTO unrecognized(text, sender, lang, has_media, created_at) VALUES(?, ?, ?, ?, ?)')
+      .run(text, sender || '', lang, hasMedia ? 1 : 0, now());
+  }
+
+  listUnrecognized({ lang, limit = 1000 } = {}) {
+    return lang
+      ? this.db.prepare('SELECT * FROM unrecognized WHERE lang = ? ORDER BY id DESC LIMIT ?').all(lang, limit)
+      : this.db.prepare('SELECT * FROM unrecognized ORDER BY id DESC LIMIT ?').all(limit);
   }
 
   // ---- stats ----

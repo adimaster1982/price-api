@@ -96,6 +96,16 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
     res.json({ ok: true });
   });
 
+  app.get('/api/unrecognized', (req, res) => res.json(store.listUnrecognized({ lang: req.query.lang })));
+
+  // CSV for Excel (UTF-8 BOM so Hebrew/Russian display correctly).
+  app.get('/export/unrecognized.csv', (req, res) => {
+    const rows = store.listUnrecognized({ lang: req.query.lang, limit: 100000 });
+    const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = ['תאריך,שולח,שפה,תמונה,הודעה', ...rows.map((r) => [r.created_at.slice(0, 16).replace('T', ' '), r.sender, r.lang, r.has_media ? 'כן' : '', r.text].map(q).join(','))].join('\r\n');
+    res.set('Content-Type', 'text/csv; charset=utf-8').set('Content-Disposition', 'attachment; filename="unrecognized.csv"').send('\uFEFF' + csv);
+  });
+
   app.get('/api/stats', (req, res) => res.json(store.stats(Number(req.query.days) || 30)));
 
   return app;

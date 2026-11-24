@@ -97,3 +97,13 @@ test('caption-less photo: bot asks for details, then attaches the photo to the t
   const media = store.events(1).filter((e) => e.media_path).map((e) => e.media_path);
   assert.deepEqual(media, ['ph1.jpg', 'ph2.jpg']);
 });
+
+test('ignored messages are kept for review, Russian is tagged', async () => {
+  const { store, agent } = setup([{ action: 'ignore' }, { action: 'ignore' }, { action: 'ignore' }]);
+  await agent.handleMessage(msg('r1', 'робот роняет детали 339'));
+  await agent.handleMessage(msg('r2', 'בוקר טוב'));
+  await agent.handleMessage(msg('r3', 'ok'));
+  const all = store.listUnrecognized();
+  assert.equal(all.length, 2);
+  assert.equal(store.listUnrecognized({ lang: 'ru' })[0].text, 'робот роняет детали 339');
+});

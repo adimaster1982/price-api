@@ -165,6 +165,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
     logger.info?.(`[agent] ${msg.sender}: "${text.slice(0, 60)}" -> ${decision.action} #${decision.ticket_id || '-'}`);
 
     if (decision.action === 'ignore') {
+      if (text.length >= 4) store.addUnrecognized(text, msg.sender, !!msg.media);
       // A photo with a caption that doesn't say machine/problem: ask, like a caption-less photo.
       if (msg.media) return addPending(msg) ? [{ type: 'reply', quoteId: msg.id, text: ASK_DETAILS(msg.media.kind) }] : [];
       return [];
