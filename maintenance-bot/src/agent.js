@@ -25,11 +25,24 @@ export function formatOpenList(tickets) {
   return `📋 קריאות פתוחות (${tickets.length}):\n` + tickets.map(ticketShort).join('\n');
 }
 
+export const WELCOME_TEXT = `👋 שלום לכולם, אני בוט האחזקה (פיילוט).
+מעכשיו כל תקלה שנכתבת כאן נפתחת אצלי כקריאה עם מספר.
+
+*איך פותחים קריאה:*
+כותבים *מספר מכונה + מה הבעיה*
+למשל: \`339 מפיל מוצרים\` · \`447 תקלה בשסתום, מכונה נעצרת\`
+תמונה – עם כיתוב של מספר מכונה ובעיה.
+
+*עדכון:* עונים (Reply) להודעה שלי על הקריאה, למשל "הזמנתי חלק" / "אני בדרך"
+*סגירה:* Reply להודעה שלי – "תוקן"
+
+*פקודות:* !פתוחות · !קריאה 12 · !עזרה`;
+
 export const HELP_TEXT = `🤖 בוט האחזקה
 • לפתיחת קריאה – פשוט כתבו את התקלה (למשל: "מכונה 7 דולפת שמן, עצרה ייצור").
 • תמונה – רצוי עם כיתוב: מספר מכונה ומה הבעיה.\n• לעדכון – ענו (Reply) להודעת הבוט או להודעה המקורית, או כתבו #מספר.
 • לסגירה – ענו "תוקן" / "סגור".
-• פקודות: !פתוחות · !קריאה 12 · !סגור 12 · !עזרה
+• פקודות: !פתוחות · !קריאה 12 · !סגור 12 · !הנחיות · !עזרה
 • אפשר גם לשאול: "מה פתוח על מכונה 12?"`;
 
 const ASK_DETAILS = (kind) =>
@@ -119,6 +132,9 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
     // 2. Deterministic commands.
     if (/^!(פתוחות|open)(?=\s|$)/i.test(text)) {
       return [{ type: 'reply', quoteId: msg.id, text: formatOpenList(store.openTickets()) }];
+    }
+    if (/^!(הנחיות|welcome)(?=\s|$)/i.test(text)) {
+      return [{ type: 'reply', text: WELCOME_TEXT }];
     }
     if (/^!(עזרה|help)(?=\s|$)/i.test(text)) {
       return [{ type: 'reply', quoteId: msg.id, text: HELP_TEXT }];

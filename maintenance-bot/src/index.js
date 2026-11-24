@@ -5,7 +5,7 @@ import { config } from './config.js';
 import { openDb } from './db.js';
 import { createClassifier } from './classifier.js';
 import { createRulesClassifier } from './rules-classifier.js';
-import { createAgent } from './agent.js';
+import { createAgent, WELCOME_TEXT } from './agent.js';
 import { startWhatsApp } from './whatsapp.js';
 import { startScheduler } from './scheduler.js';
 import { createWeb } from './web.js';
@@ -15,7 +15,19 @@ fs.mkdirSync(config.dataDir, { recursive: true });
 
 const store = openDb(path.join(config.dataDir, 'maintenance.db'));
 const getGroupId = () => store.getSetting('group_id', config.groupId);
-const setGroupId = (id) => store.setSetting('group_id', id);
+const setGroupId = (id) => {
+  store.setSetting('group_id', id);
+  sendWelcomeOnce().catch((e) => logger.error('[agent] welcome failed', e.message));
+};
+
+// Post the "how to open a ticket" instructions the first time the bot is active in a group.
+async function sendWelcomeOnce() {
+  const groupId = getGroupId();
+  if (!groupId || !wa?.state.connected || store.getSetting(`welcomed:${groupId}`)) return;
+  await wa.sendText(groupId, WELCOME_TEXT);
+  store.setSetting(`welcomed:${groupId}`, new Date().toISOString());
+  logger.info('[agent] welcome instructions posted to the group');
+}
 
 const classify =
   config.classifier === 'claude' ? createClassifier({ model: config.model, logger }) : createRulesClassifier();
@@ -26,6 +38,7 @@ const agent = createAgent({ store, classify, logger });
 const rawById = new Map();
 
 const wa = startWhatsApp({
+  onConnected: sendWelcomeOnce,
   dataDir: config.dataDir,
   pairingPhone: config.pairingPhone,
   getGroupId,

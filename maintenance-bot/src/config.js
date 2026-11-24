@@ -32,6 +32,7 @@ export const config = {
   normalEscalateHours: num(env.NORMAL_ESCALATE_HOURS, 48),
 
   // Schedules (cron, in config.timezone)
-  dailySummaryCron: env.DAILY_SUMMARY_CRON || '40 6 * * 0-5',
+  // Daily summary to the group: off by default (pilot). Set a cron, e.g. '40 6 * * 0-5', to enable.
+  dailySummaryCron: env.DAILY_SUMMARY_CRON || 'off',
   escalationCron: env.ESCALATION_CRON || '*/30 * * * *',
 };

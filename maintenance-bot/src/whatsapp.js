@@ -42,7 +42,7 @@ function extract(m) {
 
 const EXT = { image: 'jpg', audio: 'ogg', video: 'mp4', document: 'bin' };
 
-export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessage, logger = console }) {
+export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessage, onConnected = () => {}, logger = console }) {
   const authDir = path.join(dataDir, 'wa-auth');
   const mediaDir = path.join(dataDir, 'media');
   fs.mkdirSync(mediaDir, { recursive: true });
@@ -92,6 +92,7 @@ export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessag
         state.pairingCode = null;
         state.me = sock.user;
         logger.info(`[wa] connected as ${sock.user?.id}`);
+        setTimeout(() => Promise.resolve(onConnected()).catch((e) => logger.error('[wa] onConnected failed', e)), 3000);
       }
       if (u.connection === 'close') {
         state.connected = false;

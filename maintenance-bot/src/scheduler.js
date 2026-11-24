@@ -22,7 +22,8 @@ export function findEscalations(store, { urgentHours, normalHours, now = Date.no
 export function startScheduler({ store, config, wa, getGroupId, logger = console }) {
   const opts = { timezone: config.timezone };
 
-  cron.schedule(config.dailySummaryCron, async () => {
+  const summaryOn = config.dailySummaryCron && config.dailySummaryCron !== 'off';
+  if (summaryOn) cron.schedule(config.dailySummaryCron, async () => {
     const groupId = getGroupId();
     if (!groupId) return;
     try {
