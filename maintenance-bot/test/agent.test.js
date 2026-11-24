@@ -85,3 +85,15 @@ test('classifier prompt includes open tickets and reply hint', () => {
   assert.match(s, /reply_to_ticket: #3/);
   assert.match(s, /\(none\)/);
 });
+
+test('caption-less photo: bot asks for details, then attaches the photo to the ticket', async () => {
+  const { store, agent } = setup([{ action: 'new_ticket', title: 'מפיל מוצרים', machine: 'מכונה 339' }]);
+  const photo = (id) => msg(id, '', { media: { kind: 'image', path: `${id}.jpg` } });
+  const [ask] = await agent.handleMessage(photo('ph1'));
+  assert.match(ask.text, /מספר המכונה/);
+  assert.deepEqual(await agent.handleMessage(photo('ph2')), [], 'asks only once in a row');
+  const [r] = await agent.handleMessage(msg('t1', '339 מפיל מוצרים', { quotedId: 'ph1' }));
+  assert.match(r.text, /נפתחה קריאה #1/);
+  const media = store.events(1).filter((e) => e.media_path).map((e) => e.media_path);
+  assert.deepEqual(media, ['ph1.jpg', 'ph2.jpg']);
+});

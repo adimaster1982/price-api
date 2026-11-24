@@ -27,13 +27,42 @@ export function formatOpenList(tickets) {
 
 export const HELP_TEXT = `🤖 בוט האחזקה
 • לפתיחת קריאה – פשוט כתבו את התקלה (למשל: "מכונה 7 דולפת שמן, עצרה ייצור").
-• לעדכון – ענו (Reply) להודעת הבוט או להודעה המקורית, או כתבו #מספר.
+• תמונה – רצוי עם כיתוב: מספר מכונה ומה הבעיה.\n• לעדכון – ענו (Reply) להודעת הבוט או להודעה המקורית, או כתבו #מספר.
 • לסגירה – ענו "תוקן" / "סגור".
 • פקודות: !פתוחות · !קריאה 12 · !סגור 12 · !עזרה
 • אפשר גם לשאול: "מה פתוח על מכונה 12?"`;
 
-export function createAgent({ store, classify, logger = console, recentSize = 8 }) {
+const ASK_DETAILS = (kind) =>
+  kind === 'audio'
+    ? '🎤 קיבלתי הקלטה, אבל אני לא יודע לשמוע הקלטות.\nנא לכתוב (Reply להקלטה): *מספר מכונה + מה הבעיה*\nלמשל: 339 מפיל מוצרים'
+    : '📷 קיבלתי תמונה. כדי לפתוח קריאה – ענו (Reply) לתמונה עם *מספר המכונה ומה הבעיה*.\nלמשל: 339 מפיל מוצרים';
+
+export function createAgent({ store, classify, logger = console, recentSize = 8, pendingMinutes = 30, askEveryMinutes = 5 }) {
   const recent = [];
+  // Photos/voice notes waiting for a text that says which machine and what's wrong, per sender.
+  const pending = new Map(); // phone -> { items: [{ media, msgId, sender }], at, askedAt }
+
+  function addPending(msg) {
+    const now = Date.now();
+    let p = pending.get(msg.senderPhone);
+    if (!p || now - p.at > pendingMinutes * 60_000) p = { items: [], at: now, askedAt: 0 };
+    p.items.push({ media: msg.media, msgId: msg.id, sender: msg.sender });
+    p.at = now;
+    pending.set(msg.senderPhone, p);
+    if (now - p.askedAt < askEveryMinutes * 60_000) return false; // already asked recently
+    p.askedAt = now;
+    return true;
+  }
+
+  function flushPending(phone, ticketId) {
+    const p = pending.get(phone);
+    pending.delete(phone);
+    if (!p || Date.now() - p.at > pendingMinutes * 60_000) return;
+    for (const it of p.items) {
+      attachMedia(ticketId, { media: it.media, sender: it.sender });
+      store.linkMessage(it.msgId, ticketId);
+    }
+  }
 
   function remember(sender, text) {
     if (!text) return;
@@ -78,7 +107,10 @@ export function createAgent({ store, classify, logger = console, recentSize = 8 
     if (!text) {
       if (!msg.media) return [];
       const target = activeTicket(quotedTicket) || store.lastTicketBy(msg.senderPhone, 15);
-      if (!target) return [];
+      if (!target) {
+        // No ticket to attach to: keep it and ask the sender what and where.
+        return addPending(msg) ? [{ type: 'reply', quoteId: msg.id, text: ASK_DETAILS(msg.media.kind) }] : [];
+      }
       attachMedia(target.id, msg);
       store.linkMessage(msg.id, target.id);
       return [{ type: 'react', emoji: '📎', msgId: msg.id }];
@@ -116,7 +148,11 @@ export function createAgent({ store, classify, logger = console, recentSize = 8 
     remember(msg.sender, text);
     logger.info?.(`[agent] ${msg.sender}: "${text.slice(0, 60)}" -> ${decision.action} #${decision.ticket_id || '-'}`);
 
-    if (decision.action === 'ignore') return [];
+    if (decision.action === 'ignore') {
+      // A photo with a caption that doesn't say machine/problem: ask, like a caption-less photo.
+      if (msg.media) return addPending(msg) ? [{ type: 'reply', quoteId: msg.id, text: ASK_DETAILS(msg.media.kind) }] : [];
+      return [];
+    }
 
     if (decision.action === 'query') {
       return decision.reply ? [{ type: 'reply', quoteId: msg.id, text: decision.reply }] : [];
@@ -133,6 +169,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8 
       });
       store.addEvent(t.id, 'message', msg.sender, text);
       attachMedia(t.id, msg);
+      flushPending(msg.senderPhone, t.id);
       store.linkMessage(msg.id, t.id);
       return [
         {
@@ -157,6 +194,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8 
       return [];
     }
     attachMedia(ticket.id, msg);
+    flushPending(msg.senderPhone, ticket.id);
 
     if (decision.action === 'close') {
       return [closeTicket(ticket, msg.sender, decision.note || text, msg.id)];
