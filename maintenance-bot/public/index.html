@@ -76,8 +76,10 @@ const api = async (url, opts = {}) => {
 const fmt = (iso) => iso ? new Date(iso).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
 const age = (iso) => { const h = (Date.now() - Date.parse(iso)) / 36e5; return h < 1 ? `${Math.round(h * 60)} דק'` : h < 48 ? `${Math.round(h)} ש'` : `${Math.round(h / 24)} ימים`; };
 
+let waConnected = true;
 async function loadStatus() {
   const s = await api('/api/status');
+  waConnected = s.connected;
   const conn = document.getElementById('conn');
   conn.textContent = s.connected ? '● וואטסאפ מחובר' : '● וואטסאפ מנותק';
   conn.className = 'pill ' + (s.connected ? 'on' : 'off');
@@ -88,7 +90,7 @@ async function loadStatus() {
   } else if (!s.connected && s.needsQr) {
     const { qr } = await api('/api/qr');
     setup.hidden = false;
-    setup.innerHTML = `<b>חיבור הבוט:</b> בטלפון של המספר הייעודי ← וואטסאפ ← מכשירים מקושרים ← קישור מכשיר, וסרקו:<br><img src="${qr}" alt="QR" style="width:260px;max-width:100%;background:#fff;padding:8px;border-radius:8px;margin-top:8px">`;
+    setup.innerHTML = `<b>חיבור הבוט:</b> בטלפון של המספר הייעודי ← וואטסאפ ← מכשירים מקושרים ← קישור מכשיר, וסרקו:<br><img src="${qr}" alt="QR" style="width:320px;max-width:100%;background:#fff;padding:12px;border-radius:8px;margin-top:8px;display:block">`;
   } else if (s.connected && !s.groupId) {
     const groups = await api('/api/groups');
     setup.hidden = false;
@@ -176,6 +178,8 @@ async function refresh() {
 renderTabs();
 refresh();
 setInterval(() => { if (!document.getElementById('dlg').open) refresh(); }, 20000);
+// While linking, refresh the QR / pairing code every few seconds (WhatsApp rotates it every ~20s).
+setInterval(() => { if (!waConnected) loadStatus().catch(() => {}); }, 3000);
 </script>
 </body>
 </html>

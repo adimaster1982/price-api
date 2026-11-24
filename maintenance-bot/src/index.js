@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { config } from './config.js';
 import { openDb } from './db.js';
 import { createClassifier } from './classifier.js';
@@ -49,6 +50,15 @@ const wa = startWhatsApp({
 startScheduler({ store, config, wa, getGroupId, logger });
 
 createWeb({ store, config, wa, getGroupId, setGroupId, logger }).listen(config.port, () => {
-  logger.info(`[web] dashboard on port ${config.port}`);
+  logger.info(`[web] dashboard: http://localhost:${config.port}`);
+  try {
+    for (const list of Object.values(os.networkInterfaces())) {
+      for (const a of list || []) {
+        if (a.family === 'IPv4' && !a.internal) logger.info(`[web] from another device on this network: http://${a.address}:${config.port}`);
+      }
+    }
+  } catch {
+    // Some Android versions do not allow listing network interfaces.
+  }
   if (!config.dashboardPass) logger.warn('[web] DASHBOARD_PASS is not set – dashboard is locked');
 });

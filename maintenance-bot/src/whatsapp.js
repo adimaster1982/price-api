@@ -66,6 +66,13 @@ export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessag
 
     sock.ev.on('creds.update', saveCreds);
 
+    // Diagnostics for code-pairing: log which fields WhatsApp sent back.
+    sock.ws.on('CB:notification,type:link_code_companion_reg', (node) => {
+      const reg = Array.isArray(node.content) ? node.content.find((c) => c.tag === 'link_code_companion_reg') : null;
+      const tags = Array.isArray(reg?.content) ? reg.content.map((c) => c.tag).join(',') : '';
+      logger.info(`[wa] pairing reply: stage=${reg?.attrs?.stage || '?'} fields=${tags || '-'}`);
+    });
+
     sock.ev.on('connection.update', async (u) => {
       if (u.qr) {
         if (pairingPhone) {
