@@ -80,6 +80,7 @@ docker compose up -d --build
 | `MANAGER_PHONES` | — | מספרים להסלמה, מופרדים בפסיק |
 | `URGENT_ESCALATE_HOURS` | 2 | קריאה דחופה שפתוחה יותר מזה תגרום להודעה פרטית למנהל |
 | `NORMAL_ESCALATE_HOURS` | 48 | אותו דבר לקריאה רגילה |
+| `GROUP_FEEDBACK` | `react` | `react` = רק אימוג'י על ההודעה (📝 🔧 ⏳ ✅). `messages` = הודעת טקסט על כל פתיחה וסגירה |
 | `DAILY_SUMMARY_CRON` | `off` | סיכום בוקר לקבוצה. כבוי בפיילוט. להפעלה: `40 6 * * 0-5` (א'-ו' 06:40) |
 | `CLAUDE_MODEL` | `claude-opus-5-5` | מודל הסיווג במצב Claude |
 

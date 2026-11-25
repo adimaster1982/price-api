@@ -22,6 +22,9 @@ export const config = {
   classifier: (env.CLASSIFIER || 'rules').toLowerCase(),
   model: env.CLAUDE_MODEL || 'claude-opus-5-5',
 
+  // Group feedback: 'react' = emoji on the message only (default), 'messages' = text reply per open/close
+  groupFeedback: env.GROUP_FEEDBACK === 'messages' ? 'messages' : 'react',
+
   // Dashboard
   dashboardUser: env.DASHBOARD_USER || 'admin',
   dashboardPass: env.DASHBOARD_PASS || '',

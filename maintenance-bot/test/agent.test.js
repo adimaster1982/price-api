@@ -14,7 +14,7 @@ function setup(decisions) {
     calls.push(input);
     return { ...IGNORE, ...(decisions.shift() || {}) };
   };
-  return { store, calls, agent: createAgent({ store, classify, logger: quiet }) };
+  return { store, calls, agent: createAgent({ store, classify, logger: quiet, feedback: 'messages' }) };
 }
 
 const msg = (id, text, extra = {}) => ({ id, text, sender: 'יוסי', senderPhone: '972500000000', quotedId: null, media: null, ...extra });
@@ -106,4 +106,22 @@ test('ignored messages are kept for review, Russian is tagged', async () => {
   const all = store.listUnrecognized();
   assert.equal(all.length, 2);
   assert.equal(store.listUnrecognized({ lang: 'ru' })[0].text, 'робот роняет детали 339');
+});
+
+test('react mode: no text in the group, only emoji reactions', async () => {
+  const store = openDb(':memory:');
+  const decisions = [
+    { action: 'new_ticket', title: 'מפיל מוצרים', machine: 'מכונה 339' },
+    { action: 'status_change', ticket_id: 1, new_status: 'waiting_parts' },
+    { action: 'close', ticket_id: 1 },
+  ];
+  const agent = createAgent({ store, classify: async () => ({ ...IGNORE, ...decisions.shift() }), logger: quiet });
+  const [a] = await agent.handleMessage(msg('o1', '339 מפיל מוצרים'));
+  assert.deepEqual(a, { type: 'react', emoji: '📝', msgId: 'o1' });
+  const [b] = await agent.handleMessage(msg('o2', 'הזמנתי גריפר', { quotedId: 'o1' }));
+  assert.equal(b.emoji, '⏳');
+  const [c] = await agent.handleMessage(msg('o3', 'תוקן', { quotedId: 'o1' }));
+  assert.equal(c.emoji, '✅');
+  assert.equal(store.getTicket(1).status, 'closed');
+  assert.ok(store.getTicket(1).closed_at, 'close time is still recorded for the reports');
 });

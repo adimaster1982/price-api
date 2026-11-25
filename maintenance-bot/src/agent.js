@@ -33,14 +33,17 @@ export const WELCOME_TEXT = `👋 שלום לכולם, אני בוט האחזק�
 למשל: \`339 מפיל מוצרים\` · \`447 תקלה בשסתום, מכונה נעצרת\`
 תמונה – עם כיתוב של מספר מכונה ובעיה.
 
-*עדכון:* עונים (Reply) להודעה שלי על הקריאה, למשל "הזמנתי חלק" / "אני בדרך"
-*סגירה:* Reply להודעה שלי – "תוקן"
+*עדכון:* עונים (Reply) להודעה המקורית של התקלה, למשל "הזמנתי חלק" / "אני בדרך"
+*סגירה:* Reply להודעה המקורית – "תוקן"
+
+על פתיחה, עדכון וסגירה הבוט לא כותב – רק מסמן על ההודעה:
+📝 נרשמה · 🔧 בטיפול · ⏳ ממתינה לחלק · ✅ נסגרה
 
 *פקודות:* !פתוחות · !קריאה 12 · !עזרה`;
 
 export const HELP_TEXT = `🤖 בוט האחזקה
 • לפתיחת קריאה – פשוט כתבו את התקלה (למשל: "מכונה 7 דולפת שמן, עצרה ייצור").
-• תמונה – רצוי עם כיתוב: מספר מכונה ומה הבעיה.\n• לעדכון – ענו (Reply) להודעת הבוט או להודעה המקורית, או כתבו #מספר.
+• תמונה – רצוי עם כיתוב: מספר מכונה ומה הבעיה.\n• לעדכון – ענו (Reply) להודעה המקורית של התקלה, או כתבו #מספר.
 • לסגירה – ענו "תוקן" / "סגור".
 • פקודות: !פתוחות · !קריאה 12 · !סגור 12 · !הנחיות · !עזרה
 • אפשר גם לשאול: "מה פתוח על מכונה 12?"`;
@@ -50,7 +53,19 @@ const ASK_DETAILS = (kind) =>
     ? '🎤 קיבלתי הקלטה, אבל אני לא יודע לשמוע הקלטות.\nנא לכתוב (Reply להקלטה): *מספר מכונה + מה הבעיה*\nלמשל: 339 מפיל מוצרים'
     : '📷 קיבלתי תמונה. כדי לפתוח קריאה – ענו (Reply) לתמונה עם *מספר המכונה ומה הבעיה*.\nלמשל: 339 מפיל מוצרים';
 
-export function createAgent({ store, classify, logger = console, recentSize = 8, pendingMinutes = 30, askEveryMinutes = 5 }) {
+const STATUS_EMOJI = { open: '📝', in_progress: '🔧', waiting_parts: '⏳', closed: '✅' };
+
+/**
+ * feedback: 'react' – only an emoji reaction on the worker's message (default, keeps the group clean)
+ *           'messages' – a text reply for every open / status change / close
+ */
+export function createAgent({ store, classify, logger = console, recentSize = 8, pendingMinutes = 30, askEveryMinutes = 5, feedback = 'react' }) {
+  // Acknowledge a ticket change: emoji on the message, or a text reply.
+  const ack = (msgId, status, ticketId, text) =>
+    feedback === 'messages'
+      ? { type: 'reply', quoteId: msgId, ticketId, text }
+      : { type: 'react', emoji: STATUS_EMOJI[status], msgId };
+
   const recent = [];
   // Photos/voice notes waiting for a text that says which machine and what's wrong, per sender.
   const pending = new Map(); // phone -> { items: [{ media, msgId, sender }], at, askedAt }
@@ -98,12 +113,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
     const closed = store.updateTicket(ticket.id, { status: 'closed' }, author);
     store.linkMessage(msgId, ticket.id);
     const took = formatDuration(Date.parse(closed.closed_at) - Date.parse(closed.created_at));
-    return {
-      type: 'reply',
-      quoteId: msgId,
-      ticketId: ticket.id,
-      text: `✅ קריאה #${ticket.id} נסגרה${ticket.machine ? ` (${ticket.machine})` : ''} · זמן טיפול: ${took}`,
-    };
+    return ack(msgId, 'closed', ticket.id, `✅ קריאה #${ticket.id} נסגרה${ticket.machine ? ` (${ticket.machine})` : ''} · זמן טיפול: ${took}`);
   }
 
   /**
@@ -189,18 +199,17 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
       flushPending(msg.senderPhone, t.id);
       store.linkMessage(msg.id, t.id);
       return [
-        {
-          type: 'reply',
-          quoteId: msg.id,
-          ticketId: t.id,
-          text:
-            `🆕 נפתחה קריאה #${t.id}\n` +
+        ack(
+          msg.id,
+          'open',
+          t.id,
+          `🆕 נפתחה קריאה #${t.id}\n` +
             `${t.machine ? `ציוד: ${t.machine}\n` : ''}` +
             `תקלה: ${t.title}\n` +
             `דחיפות: ${PRIORITY_ICON[t.priority]} ${PRIORITY_HE[t.priority]}` +
             `${t.assignee ? `\nאחראי: ${t.assignee}` : ''}\n` +
-            `לעדכון/סגירה – ענו (Reply) להודעה זו.`,
-        },
+            `לעדכון/סגירה – ענו (Reply) להודעה זו.`
+        ),
       ];
     }
 
@@ -227,12 +236,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
         msg.sender
       );
       return [
-        {
-          type: 'reply',
-          quoteId: msg.id,
-          ticketId: ticket.id,
-          text: `🔧 קריאה #${ticket.id} → ${STATUS_HE[updated.status]}${updated.assignee ? ` · ${updated.assignee}` : ''}`,
-        },
+        ack(msg.id, updated.status, ticket.id, `🔧 קריאה #${ticket.id} → ${STATUS_HE[updated.status]}${updated.assignee ? ` · ${updated.assignee}` : ''}`),
       ];
     }
 

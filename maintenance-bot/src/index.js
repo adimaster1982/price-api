@@ -32,7 +32,7 @@ async function sendWelcomeOnce() {
 const classify =
   config.classifier === 'claude' ? createClassifier({ model: config.model, logger }) : createRulesClassifier();
 logger.info(`[agent] classifier: ${config.classifier === 'claude' ? `Claude (${config.model})` : 'offline rules'}`);
-const agent = createAgent({ store, classify, logger });
+const agent = createAgent({ store, classify, logger, feedback: config.groupFeedback });
 
 // Keep recent raw messages so replies can quote them.
 const rawById = new Map();

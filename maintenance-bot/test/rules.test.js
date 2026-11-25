@@ -61,7 +61,7 @@ test('queries answer from the open list', async () => {
 
 test('end to end with the agent, offline', async () => {
   const store = openDb(':memory:');
-  const agent = createAgent({ store, classify, logger: { info() {}, warn() {}, error() {} } });
+  const agent = createAgent({ store, classify, logger: { info() {}, warn() {}, error() {} }, feedback: 'messages' });
   const m = (id, text, q = null) => ({ id, text, sender: 'יוסי', senderPhone: '1', quotedId: q, media: null });
   const [a] = await agent.handleMessage(m('1', 'מכונה 7 דולפת שמן, עצרה ייצור'));
   assert.match(a.text, /נפתחה קריאה #1/);

@@ -68,7 +68,7 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
     const { title, machine, priority, status, assignee, announce } = req.body || {};
     const t = store.updateTicket(before.id, { title, machine, priority, status, assignee }, 'לוח בקרה');
     const groupId = getGroupId();
-    if (announce !== false && groupId && status && status !== before.status) {
+    if (config.groupFeedback === 'messages' && announce !== false && groupId && status && status !== before.status) {
       const msg =
         status === 'closed'
           ? `✅ קריאה #${t.id} נסגרה מלוח הבקרה · זמן טיפול: ${formatDuration(Date.parse(t.closed_at) - Date.parse(t.created_at))}`
