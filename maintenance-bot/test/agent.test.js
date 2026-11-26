@@ -179,3 +179,18 @@ test('commands work with "!" at the start, at the end, or without it', async () 
   assert.match(y.text, /נסגרה/);
   assert.equal(calls.length, 0);
 });
+
+test('deleting the opening message in the group deletes the ticket; deleting an update only notes it', async () => {
+  const { store, agent } = setup([
+    { action: 'new_ticket', title: 'מפיל מוצרים', machine: 'מכונה 339' },
+    { action: 'update', ticket_id: 1, note: 'הוחלף גריפר' },
+  ]);
+  await agent.handleMessage(msg('open1', '339 מפיל מוצרים'));
+  await agent.handleMessage(msg('upd1', 'הוחלף גריפר', { quotedId: 'open1' }));
+  assert.deepEqual(agent.handleRevoke('upd1'), { noted: 1 });
+  assert.equal(store.openTickets().length, 1);
+  assert.deepEqual(agent.handleRevoke('open1'), { deleted: 1 });
+  assert.equal(store.openTickets().length, 0);
+  assert.ok(store.getTicket(1).deleted_at);
+  assert.deepEqual(agent.handleRevoke('unknown'), { noted: null });
+});

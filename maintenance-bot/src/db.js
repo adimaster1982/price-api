@@ -73,9 +73,12 @@ export function openDb(file) {
   if (!cols.includes('category')) db.exec(`ALTER TABLE tickets ADD COLUMN category TEXT NOT NULL DEFAULT ''`);
   if (!cols.includes('closed_by')) db.exec(`ALTER TABLE tickets ADD COLUMN closed_by TEXT NOT NULL DEFAULT ''`);
   if (!cols.includes('deleted_at')) db.exec(`ALTER TABLE tickets ADD COLUMN deleted_at TEXT`);
-  for (const c of ['eq_type', 'eq_number', 'eq_sku', 'eq_desc']) {
+  for (const c of ['eq_type', 'eq_number', 'eq_sku', 'eq_desc', 'source_msg_id']) {
     if (!cols.includes(c)) db.exec(`ALTER TABLE tickets ADD COLUMN ${c} TEXT NOT NULL DEFAULT ''`);
   }
+  // Tickets from before source_msg_id: the first message linked to the ticket is the one that opened it.
+  db.exec(`UPDATE tickets SET source_msg_id = COALESCE((SELECT msg_id FROM msg_links WHERE ticket_id = tickets.id ORDER BY rowid LIMIT 1), '')
+           WHERE source_msg_id = ''`);
   const store = new Store(db);
   store.backfillCategories();
   store.backfillEquipment();
@@ -275,6 +278,16 @@ export class Store {
     this.db
       .prepare('INSERT INTO msg_links(msg_id, ticket_id) VALUES(?, ?) ON CONFLICT(msg_id) DO UPDATE SET ticket_id = excluded.ticket_id')
       .run(msgId, Number(ticketId));
+  }
+
+  /** The WhatsApp message that opened the ticket (deleting it deletes the ticket). */
+  setSourceMessage(ticketId, msgId) {
+    this.db.prepare('UPDATE tickets SET source_msg_id = ? WHERE id = ?').run(msgId || '', Number(ticketId));
+  }
+
+  ticketBySourceMessage(msgId) {
+    if (!msgId) return null;
+    return this.db.prepare('SELECT * FROM tickets WHERE source_msg_id = ? LIMIT 1').get(msgId) || null;
   }
 
   ticketForMessage(msgId) {

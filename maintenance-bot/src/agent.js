@@ -287,6 +287,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
         reporterPhone: msg.senderPhone,
         category: categorize(`${decision.title || ''} ${text}`),
       });
+      store.setSourceMessage(t.id, msg.id);
       if (text !== t.title) store.addEvent(t.id, 'message', msg.sender, text);
       attachMedia(t.id, msg);
       flushPending(msg.senderPhone, t.id);
@@ -338,5 +339,20 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
     return [{ type: 'react', emoji: '👍', msgId: msg.id }];
   }
 
-  return { handleMessage };
+  /**
+   * A group message was deleted for everyone. If it opened a ticket, the ticket is deleted
+   * (soft – restorable in the dashboard); if it was an update, a note is added.
+   */
+  function handleRevoke(msgId) {
+    const opened = store.ticketBySourceMessage(msgId);
+    if (opened) {
+      if (!opened.deleted_at) store.deleteTicket(opened.id, 'וואטסאפ', 'ההודעה שפתחה את הקריאה נמחקה בקבוצה');
+      return { deleted: opened.id };
+    }
+    const linked = store.ticketForMessage(msgId);
+    if (linked) store.addEvent(linked, 'note', 'וואטסאפ', 'הודעת עדכון נמחקה בקבוצה');
+    return { noted: linked || null };
+  }
+
+  return { handleMessage, handleRevoke };
 }

@@ -54,6 +54,10 @@ const wa = startWhatsApp({
     logger.info(`[wa] private ${sender}: ${text.slice(0, 40)}`);
     await wa.sendText(jid, reply);
   },
+  onRevoke: ({ id }) => {
+    const r = agent.handleRevoke(id);
+    if (r.deleted) logger.info(`[agent] message deleted in the group → ticket #${r.deleted} deleted`);
+  },
   onMessage: async (msg) => {
     logger.info(`[wa] ${new Date().toLocaleTimeString('he-IL')} ${msg.sender}: ${(msg.text || (msg.media ? `[${msg.media.kind}]` : '')).slice(0, 60)}`);
     rawById.set(msg.id, msg.raw);

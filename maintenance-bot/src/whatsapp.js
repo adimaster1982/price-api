@@ -11,6 +11,7 @@ import {
   downloadMediaMessage,
   fetchLatestBaileysVersion,
   Browsers,
+  WAMessageStubType,
 } from '@whiskeysockets/baileys';
 
 function unwrap(message) {
@@ -44,7 +45,7 @@ const userPart = (jid) => String(jid).split('@')[0].split(':')[0];
 
 const EXT = { image: 'jpg', audio: 'ogg', video: 'mp4', document: 'bin' };
 
-export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessage, onPrivate = async () => {}, onConnected = () => {}, logger = console }) {
+export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessage, onPrivate = async () => {}, onRevoke = async () => {}, onConnected = () => {}, logger = console }) {
   const authDir = path.join(dataDir, 'wa-auth');
   const mediaDir = path.join(dataDir, 'media');
   fs.mkdirSync(mediaDir, { recursive: true });
@@ -107,6 +108,17 @@ export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessag
           logger.warn(`[wa] connection closed (${code}) – reconnecting`);
         }
         setTimeout(() => connect().catch((e) => logger.error('[wa] reconnect failed', e)), 3000);
+      }
+    });
+
+    // "Delete for everyone" in the group.
+    sock.ev.on('messages.update', async (updates) => {
+      const groupId = getGroupId();
+      for (const { key, update } of updates) {
+        if (!groupId || key?.remoteJid !== groupId) continue;
+        if (update?.messageStubType === WAMessageStubType.REVOKE || update?.message === null) {
+          await Promise.resolve(onRevoke({ id: key.id })).catch((e) => logger.error('[wa] revoke handling failed', e));
+        }
       }
     });
 
