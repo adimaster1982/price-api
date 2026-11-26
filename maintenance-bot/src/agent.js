@@ -101,7 +101,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
 
   function activeTicket(id) {
     const t = id ? store.getTicket(id) : null;
-    return t && t.status !== 'closed' ? t : null;
+    return t && t.status !== 'closed' && !t.deleted_at ? t : null;
   }
 
   function attachMedia(ticketId, msg) {
@@ -153,7 +153,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
     const showCmd = text.match(/^!(?:קריאה|ticket)\s*#?(\d+)/i);
     if (showCmd) {
       const t = store.getTicket(Number(showCmd[1]));
-      if (!t) return [{ type: 'reply', quoteId: msg.id, text: `לא נמצאה קריאה #${showCmd[1]}` }];
+      if (!t || t.deleted_at) return [{ type: 'reply', quoteId: msg.id, text: `לא נמצאה קריאה #${showCmd[1]}` }];
       const hist = store.events(t.id).slice(-8).map((e) => `• ${e.created_at.slice(5, 16).replace('T', ' ')} ${e.author}: ${e.text}`).join('\n');
       return [{ type: 'reply', quoteId: msg.id, ticketId: t.id, text: `${ticketShort(t)}\n${hist}` }];
     }

@@ -91,6 +91,18 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
     res.json(store.createTicket({ title, machine, priority, assignee, reporter: 'לוח בקרה' }));
   });
 
+  app.delete('/api/tickets/:id', (req, res) => {
+    const t = store.deleteTicket(req.params.id, 'לוח בקרה', String(req.body?.reason || ''));
+    if (!t) return res.status(404).json({ error: 'not found' });
+    res.json(t);
+  });
+
+  app.post('/api/tickets/:id/restore', (req, res) => {
+    const t = store.restoreTicket(req.params.id, 'לוח בקרה');
+    if (!t) return res.status(404).json({ error: 'not found' });
+    res.json(t);
+  });
+
   app.post('/api/tickets/:id/notes', (req, res) => {
     const t = store.getTicket(req.params.id);
     if (!t || !req.body?.text) return res.status(400).json({ error: 'bad request' });

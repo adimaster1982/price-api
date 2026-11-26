@@ -63,6 +63,7 @@ export function openDb(file) {
   const cols = db.prepare('PRAGMA table_info(tickets)').all().map((c) => c.name);
   if (!cols.includes('category')) db.exec(`ALTER TABLE tickets ADD COLUMN category TEXT NOT NULL DEFAULT ''`);
   if (!cols.includes('closed_by')) db.exec(`ALTER TABLE tickets ADD COLUMN closed_by TEXT NOT NULL DEFAULT ''`);
+  if (!cols.includes('deleted_at')) db.exec(`ALTER TABLE tickets ADD COLUMN deleted_at TEXT`);
   const store = new Store(db);
   store.backfillCategories();
   return store;
@@ -108,15 +109,18 @@ export class Store {
     if (status === 'active') {
       return this.db
         .prepare(
-          `SELECT * FROM tickets WHERE status != 'closed'
+          `SELECT * FROM tickets WHERE status != 'closed' AND deleted_at IS NULL
            ORDER BY CASE priority WHEN 'urgent' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END, created_at`
         )
         .all();
     }
-    if (status && STATUSES.includes(status)) {
-      return this.db.prepare('SELECT * FROM tickets WHERE status = ? ORDER BY updated_at DESC').all(status);
+    if (status === 'deleted') {
+      return this.db.prepare('SELECT * FROM tickets WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 500').all();
     }
-    return this.db.prepare('SELECT * FROM tickets ORDER BY updated_at DESC LIMIT 500').all();
+    if (status && STATUSES.includes(status)) {
+      return this.db.prepare('SELECT * FROM tickets WHERE status = ? AND deleted_at IS NULL ORDER BY updated_at DESC').all(status);
+    }
+    return this.db.prepare('SELECT * FROM tickets WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT 500').all();
   }
 
   openTickets() {
@@ -169,7 +173,22 @@ export class Store {
 
   /** All tickets opened since the given ISO time (for the analysis screen). */
   ticketsSince(sinceIso) {
-    return this.db.prepare('SELECT * FROM tickets WHERE created_at >= ? ORDER BY created_at').all(sinceIso);
+    return this.db.prepare('SELECT * FROM tickets WHERE created_at >= ? AND deleted_at IS NULL ORDER BY created_at').all(sinceIso);
+  }
+
+  /** "Not a real ticket": hidden from lists, reports and the bot, but kept so it can be restored. */
+  deleteTicket(id, author = '', reason = '') {
+    if (!this.getTicket(id)) return null;
+    this.db.prepare('UPDATE tickets SET deleted_at = ? WHERE id = ?').run(now(), Number(id));
+    this.addEvent(id, 'deleted', author, `נמחקה – לא רלוונטית${reason ? `: ${reason}` : ''}`);
+    return this.getTicket(id);
+  }
+
+  restoreTicket(id, author = '') {
+    if (!this.getTicket(id)) return null;
+    this.db.prepare('UPDATE tickets SET deleted_at = NULL WHERE id = ?').run(Number(id));
+    this.addEvent(id, 'restored', author, 'שוחזרה');
+    return this.getTicket(id);
   }
 
   markEscalated(id) {
@@ -206,7 +225,7 @@ export class Store {
     const since = new Date(Date.now() - withinMinutes * 60_000).toISOString();
     return (
       this.db
-        .prepare(`SELECT * FROM tickets WHERE reporter_phone = ? AND created_at >= ? AND status != 'closed' ORDER BY id DESC LIMIT 1`)
+        .prepare(`SELECT * FROM tickets WHERE reporter_phone = ? AND created_at >= ? AND status != 'closed' AND deleted_at IS NULL ORDER BY id DESC LIMIT 1`)
         .get(phone, since) || null
     );
   }
@@ -229,17 +248,17 @@ export class Store {
   stats(days = 30) {
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
     const byStatus = Object.fromEntries(STATUSES.map((s) => [s, 0]));
-    for (const r of this.db.prepare('SELECT status, COUNT(*) AS n FROM tickets GROUP BY status').all()) byStatus[r.status] = r.n;
-    const opened = this.db.prepare('SELECT COUNT(*) AS n FROM tickets WHERE created_at >= ?').get(since).n;
+    for (const r of this.db.prepare('SELECT status, COUNT(*) AS n FROM tickets WHERE deleted_at IS NULL GROUP BY status').all()) byStatus[r.status] = r.n;
+    const opened = this.db.prepare('SELECT COUNT(*) AS n FROM tickets WHERE created_at >= ? AND deleted_at IS NULL').get(since).n;
     const closedRows = this.db
-      .prepare('SELECT created_at, closed_at FROM tickets WHERE closed_at IS NOT NULL AND closed_at >= ?')
+      .prepare('SELECT created_at, closed_at FROM tickets WHERE closed_at IS NOT NULL AND closed_at >= ? AND deleted_at IS NULL')
       .all(since);
     const mttrHours = closedRows.length
       ? closedRows.reduce((s, r) => s + (Date.parse(r.closed_at) - Date.parse(r.created_at)), 0) / closedRows.length / 3_600_000
       : null;
     const topMachines = this.db
       .prepare(
-        `SELECT machine, COUNT(*) AS n FROM tickets WHERE machine != '' AND created_at >= ?
+        `SELECT machine, COUNT(*) AS n FROM tickets WHERE machine != '' AND created_at >= ? AND deleted_at IS NULL
          GROUP BY machine ORDER BY n DESC LIMIT 5`
       )
       .all(since);

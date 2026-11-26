@@ -81,7 +81,7 @@
 <script>
 const ST = { open: 'פתוחה', in_progress: 'בטיפול', waiting_parts: 'ממתינה לחלק', closed: 'סגורה' };
 const PR = { urgent: '🔴 דחופה', normal: '🟡 רגילה', low: '⚪ נמוכה' };
-const TABS = [['active', 'פעילות'], ['open', 'פתוחות'], ['in_progress', 'בטיפול'], ['waiting_parts', 'ממתינות לחלק'], ['closed', 'סגורות'], ['', 'הכל']];
+const TABS = [['active', 'פעילות'], ['open', 'פתוחות'], ['in_progress', 'בטיפול'], ['waiting_parts', 'ממתינות לחלק'], ['closed', 'סגורות'], ['', 'הכל'], ['deleted', '🗑️ נמחקו']];
 let tab = 'active';
 let CATS = [];
 const catLabel = (k) => (CATS.find((c) => c.key === k) || {}).label || 'אחר';
@@ -191,11 +191,24 @@ async function openTicket(id) {
     <div class="row">${Object.entries(ST).map(([k, v]) => `<button class="btn ${k === t.status ? 'primary' : ''}" data-status="${k}">${v}</button>`).join('')}</div>
     <ul class="events">${t.events.map((e) => `<li><small>${fmt(e.created_at)} · ${esc(e.author)}</small><br>${esc(e.text)}${e.media_path && e.media_path.endsWith('.jpg') ? `<a href="/media/${encodeURIComponent(e.media_path)}" target="_blank"><img src="/media/${encodeURIComponent(e.media_path)}" loading="lazy"></a>` : e.media_path ? ` <a href="/media/${encodeURIComponent(e.media_path)}" target="_blank">פתח קובץ</a>` : ''}</li>`).join('')}</ul>
     <textarea id="note" rows="2" placeholder="הוספת הערה…"></textarea>
-    <div class="row"><button class="btn primary" id="save">שמור</button></div>`;
+    <div class="row" style="justify-content:space-between">
+      <button class="btn primary" id="save">שמור</button>
+      ${t.deleted_at
+        ? `<button class="btn" id="restore">↩️ שחזר קריאה</button>`
+        : `<button class="btn" id="del" style="color:var(--urgent)">🗑️ מחק – לא רלוונטית</button>`}
+    </div>`;
   dlg.showModal();
   dlg.querySelector('#x').onclick = () => dlg.close();
   const patch = async (body) => { await api('/api/tickets/' + t.id, { method: 'PATCH', body: JSON.stringify(body) }); };
   dlg.querySelectorAll('[data-status]').forEach((b) => b.onclick = async () => { await patch({ status: b.dataset.status }); dlg.close(); refresh(); });
+  const del = dlg.querySelector('#del');
+  if (del) del.onclick = async () => {
+    if (!confirm(`למחוק את קריאה #${t.id}?\nהיא תוסר מהרשימות ומהסטטיסטיקה. אפשר לשחזר מהלשונית "נמחקו".`)) return;
+    await api('/api/tickets/' + t.id, { method: 'DELETE' });
+    dlg.close(); refresh();
+  };
+  const restore = dlg.querySelector('#restore');
+  if (restore) restore.onclick = async () => { await api(`/api/tickets/${t.id}/restore`, { method: 'POST' }); dlg.close(); refresh(); };
   dlg.querySelector('#save').onclick = async () => {
     await patch({ machine: f_machine.value, assignee: f_assignee.value, priority: f_priority.value, category: f_category.value });
     const note = dlg.querySelector('#note').value.trim();

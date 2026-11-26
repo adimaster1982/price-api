@@ -68,3 +68,15 @@ test('overlapping tickets on one machine count downtime once', () => {
   assert.equal(a.machines[0].downtimeHours, 8);
   assert.equal(a.machines[0].mtbfHours, (720 - 8) / 2);
 });
+
+test('deleted tickets vanish from lists, reports and the bot, and can be restored', () => {
+  const store = openDb(':memory:');
+  const t = store.createTicket({ title: 'בדיקה 999 לא עובד', machine: 'מכונה 999' });
+  store.deleteTicket(t.id, 'לוח בקרה');
+  assert.equal(store.openTickets().length, 0);
+  assert.equal(store.listTickets().length, 0);
+  assert.equal(store.ticketsSince('2000-01-01').length, 0);
+  assert.equal(store.listTickets({ status: 'deleted' })[0].id, t.id);
+  store.restoreTicket(t.id, 'לוח בקרה');
+  assert.equal(store.openTickets().length, 1);
+});
