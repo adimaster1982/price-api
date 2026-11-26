@@ -114,7 +114,11 @@ export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessag
       for (const raw of messages) {
         try {
           if (!raw.message || raw.key.fromMe) continue;
-          if (!groupId || raw.key.remoteJid !== groupId) continue;
+          if (!groupId) {
+            logger.warn('[wa] message ignored: no group selected yet – choose the group in the dashboard');
+            continue;
+          }
+          if (raw.key.remoteJid !== groupId) continue;
           const m = unwrap(raw.message);
           const { text, quotedId, mediaKind } = extract(m);
 

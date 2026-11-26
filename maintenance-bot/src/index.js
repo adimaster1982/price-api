@@ -44,6 +44,7 @@ const wa = startWhatsApp({
   getGroupId,
   logger,
   onMessage: async (msg) => {
+    logger.info(`[wa] ${new Date().toLocaleTimeString('he-IL')} ${msg.sender}: ${(msg.text || (msg.media ? `[${msg.media.kind}]` : '')).slice(0, 60)}`);
     rawById.set(msg.id, msg.raw);
     if (rawById.size > 500) rawById.delete(rawById.keys().next().value);
 
