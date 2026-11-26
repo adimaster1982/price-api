@@ -4,6 +4,8 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { STATUS_HE } from './db.js';
 import { formatDuration } from './agent.js';
+import { analyze, handlerOf } from './analysis.js';
+import { CATEGORIES, OTHER, CATEGORY_LABEL } from './categories.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -65,8 +67,8 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
   app.patch('/api/tickets/:id', async (req, res) => {
     const before = store.getTicket(req.params.id);
     if (!before) return res.status(404).json({ error: 'not found' });
-    const { title, machine, priority, status, assignee, announce } = req.body || {};
-    const t = store.updateTicket(before.id, { title, machine, priority, status, assignee }, 'לוח בקרה');
+    const { title, machine, priority, status, assignee, category, announce } = req.body || {};
+    const t = store.updateTicket(before.id, { title, machine, priority, status, assignee, category }, 'לוח בקרה');
     const groupId = getGroupId();
     if (config.groupFeedback === 'messages' && announce !== false && groupId && status && status !== before.status) {
       const msg =
@@ -104,6 +106,28 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const csv = ['תאריך,שולח,שפה,תמונה,הודעה', ...rows.map((r) => [r.created_at.slice(0, 16).replace('T', ' '), r.sender, r.lang, r.has_media ? 'כן' : '', r.text].map(q).join(','))].join('\r\n');
     res.set('Content-Type', 'text/csv; charset=utf-8').set('Content-Disposition', 'attachment; filename="unrecognized.csv"').send('\uFEFF' + csv);
+  });
+
+  app.get('/api/categories', (_req, res) => res.json([...CATEGORIES, OTHER].map(({ key, label }) => ({ key, label }))));
+
+  app.get('/api/analysis', (req, res) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 730);
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+    res.json(analyze(store.ticketsSince(since), { days, category: String(req.query.category || '') }));
+  });
+
+  // All tickets as CSV for Excel (management reports).
+  app.get('/export/tickets.csv', (req, res) => {
+    const days = Math.min(Math.max(Number(req.query.days) || 365, 1), 3650);
+    const rows = store.ticketsSince(new Date(Date.now() - days * 86_400_000).toISOString());
+    const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const fmt = (iso) => (iso ? iso.slice(0, 16).replace('T', ' ') : '');
+    const hours = (t) => (t.closed_at ? ((Date.parse(t.closed_at) - Date.parse(t.created_at)) / 3_600_000).toFixed(2) : '');
+    const head = 'מספר,מכונה,סוג תקלה,תקלה,דחיפות,סטטוס,דיווח,טיפל,נפתחה,נסגרה,זמן תיקון (שעות)';
+    const lines = rows.map((t) =>
+      [t.id, t.machine, CATEGORY_LABEL[t.category] || 'אחר', t.title, t.priority, STATUS_HE[t.status], t.reporter, handlerOf(t), fmt(t.created_at), fmt(t.closed_at), hours(t)].map(q).join(',')
+    );
+    res.set('Content-Type', 'text/csv; charset=utf-8').set('Content-Disposition', 'attachment; filename="tickets.csv"').send('\uFEFF' + [head, ...lines].join('\r\n'));
   });
 
   app.get('/api/stats', (req, res) => res.json(store.stats(Number(req.query.days) || 30)));

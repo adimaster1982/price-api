@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ניתוח אחזקה</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #fff; --text: #1c1f24; --muted: #667085; --line: #e3e6ea;
+    --accent: #1f6feb; --series: #257de0; --track: #eef0f3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121417; --card: #1c1f24; --text: #e8eaed; --muted: #9aa3af; --line: #2c3037;
+      --accent: #5b9dff; --series: #338ced; --track: #262a31; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 0 16px 40px; }
+  .btn, select { text-decoration: none; border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 7px 12px; border-radius: 8px; font: inherit; }
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .filters label { color: var(--muted); font-size: 14px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  .tile b { display: block; font-size: 24px; font-variant-numeric: tabular-nums; } .tile span { color: var(--muted); font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; min-width: 0; }
+  .grid .panel { margin-bottom: 0; }
+  .sub { color: var(--muted); font-size: 12px; margin: -6px 0 10px; }
+  .meter { display: grid; grid-template-columns: minmax(70px, 30%) 1fr 4.6em; align-items: center; gap: 8px; padding: 3px 0; font-size: 13px; border-radius: 6px; }
+  .meter:hover { background: var(--track); }
+  .meter .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meter .bar { height: 10px; background: var(--track); border-radius: 4px; overflow: hidden; }
+  .meter .bar i { display: block; height: 100%; background: var(--series); border-radius: 4px; min-width: 2px; }
+  .meter .val { text-align: end; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: start; white-space: nowrap; }
+  td.num, th.num { text-align: end; font-variant-numeric: tabular-nums; }
+  th { color: var(--muted); font-weight: 600; cursor: pointer; user-select: none; }
+  th[aria-sort="ascending"]::after { content: " ▲"; } th[aria-sort="descending"]::after { content: " ▼"; }
+  tbody tr:hover { background: var(--track); }
+  .empty { color: var(--muted); text-align: center; padding: 14px 0; }
+  .note { color: var(--muted); font-size: 13px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 ניתוח זמני תיקון</h1>
+  <div class="filters" style="margin:0">
+    <a class="btn" href="/">← קריאות</a>
+    <a class="btn" id="exportLink" href="/export/tickets.csv">📥 ייצוא לאקסל</a>
+  </div>
+</header>
+<main>
+  <div class="filters">
+    <label>תקופה
+      <select id="days">
+        <option value="7">7 ימים</option><option value="30" selected>30 יום</option><option value="90">3 חודשים</option>
+        <option value="180">חצי שנה</option><option value="365">שנה</option>
+      </select>
+    </label>
+    <label>סוג תקלה <select id="category"><option value="">הכל</option></select></label>
+  </div>
+
+  <section class="tiles" id="tiles"></section>
+
+  <section class="grid">
+    <div class="panel"><h2>MTTR לפי מכונה</h2><div class="sub">זמן תיקון ממוצע · הארוך ביותר למעלה</div><div id="mttr"></div></div>
+    <div class="panel"><h2>MTBF לפי מכונה</h2><div class="sub">זמן ממוצע בין תקלות · הבעייתית ביותר (הקצר ביותר) למעלה</div><div id="mtbf"></div></div>
+  </section>
+
+  <section class="grid">
+    <div class="panel"><h2>סוגי תקלות</h2><div class="sub">מספר תקלות · ריחוף מציג MTTR</div><div id="cats"></div></div>
+    <div class="panel"><h2>מי טיפל</h2><div class="sub">קריאות שנסגרו · ריחוף מציג MTTR</div><div id="handlers"></div></div>
+  </section>
+
+  <section class="panel">
+    <h2>כל המכונות</h2>
+    <div class="tablewrap"><table id="table"></table></div>
+  </section>
+
+  <section class="panel note">
+    <b>איך מחושב:</b><br>
+    <b>MTTR</b> – הזמן הממוצע מהדיווח בקבוצה ועד הסגירה, בקריאות שנסגרו בתקופה. כולל זמן המתנה לטכנאי ולחלקים.<br>
+    <b>MTBF</b> – (אורך התקופה פחות זמן ההשבתה) חלקי מספר התקלות, לכל מכונה. ההנחה היא שהמכונה אמורה לעבוד כל התקופה (24/7), כי אין לבוט לוח ייצור. במכונה עם תקלה אחת בתקופה זה רק אומדן גס.<br>
+    <b>זמן השבתה</b> – הזמן שבו הייתה למכונה קריאה פתוחה (חפיפה בין שתי קריאות נספרת פעם אחת). קריאה פתוחה נספרת עד עכשיו – לכן חשוב לסגור קריאות שטופלו.<br>
+    הנתונים טובים כמו הדיווח בקבוצה: תקלה שלא דווחה, או קריאה שלא נסגרה בזמן, משנות את המדדים.
+  </section>
+</main>
+
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const api = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(await r.text()); return r.json(); };
+const dur = (h) => h == null ? '—' : h < 1 ? `${Math.round(h * 60)} דק'` : h < 48 ? `${h.toFixed(1)} ש'` : `${(h / 24).toFixed(1)} ימים`;
+const date = (iso) => iso ? new Date(iso).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }) : '';
+
+function meters(el, rows, { name, value, label, tip }) {
+  if (!rows.length) { el.innerHTML = '<div class="empty">אין נתונים בתקופה</div>'; return; }
+  const max = Math.max(...rows.map(value), 1e-9);
+  el.innerHTML = rows.map((r) => `<div class="meter" title="${esc(tip(r))}"><span class="name">${esc(name(r))}</span><span class="bar"><i style="width:${(value(r) / max) * 100}%"></i></span><span class="val">${esc(label(r))}</span></div>`).join('');
+}
+
+const COLS = [
+  ['machine', 'מכונה', false, (m) => esc(m.machine)],
+  ['failures', 'תקלות', true, (m) => m.failures],
+  ['open', 'פתוחות', true, (m) => m.open],
+  ['mttrHours', 'MTTR', true, (m) => dur(m.mttrHours)],
+  ['mtbfHours', 'MTBF', true, (m) => dur(m.mtbfHours)],
+  ['downtimeHours', 'זמן השבתה', true, (m) => dur(m.downtimeHours)],
+  ['topCategory', 'סוג נפוץ', false, (m) => esc(m.topCategory)],
+  ['lastFailure', 'תקלה אחרונה', false, (m) => date(m.lastFailure)],
+];
+let sortKey = 'failures', sortDir = -1, data = null;
+
+function renderTable() {
+  const el = document.getElementById('table');
+  if (!data.machines.length) { el.innerHTML = '<tr><td class="empty">אין תקלות בתקופה</td></tr>'; return; }
+  const rows = [...data.machines].sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if (x == null) return 1; if (y == null) return -1;
+    return (x > y ? 1 : x < y ? -1 : 0) * sortDir;
+  });
+  el.innerHTML = `<thead><tr>${COLS.map(([k, l, n]) => `<th class="${n ? 'num' : ''}" data-k="${k}" ${k === sortKey ? `aria-sort="${sortDir > 0 ? 'ascending' : 'descending'}"` : ''}>${l}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map((m) => `<tr>${COLS.map(([, , n, f]) => `<td class="${n ? 'num' : ''}">${f(m)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  el.querySelectorAll('th').forEach((th) => th.onclick = () => {
+    const k = th.dataset.k;
+    sortDir = k === sortKey ? -sortDir : -1; sortKey = k; renderTable();
+  });
+}
+
+async function load() {
+  const days = document.getElementById('days').value;
+  const category = document.getElementById('category').value;
+  document.getElementById('exportLink').href = `/export/tickets.csv?days=${days}`;
+  data = await api(`/api/analysis?days=${days}&category=${encodeURIComponent(category)}`);
+  const t = data.total;
+  document.getElementById('tiles').innerHTML = [
+    [t.failures, 'תקלות בתקופה'],
+    [t.open, 'עדיין פתוחות'],
+    [dur(t.mttrHours), 'MTTR – זמן תיקון ממוצע'],
+    [dur(t.mtbfHours), 'MTBF ממוצע למכונה'],
+    [dur(t.downtimeHours), 'זמן השבתה כולל'],
+    [t.machines, 'מכונות עם תקלות'],
+  ].map(([v, l]) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`).join('');
+
+  const withMttr = data.machines.filter((m) => m.mttrHours != null).sort((a, b) => b.mttrHours - a.mttrHours).slice(0, 12);
+  meters(document.getElementById('mttr'), withMttr, {
+    name: (m) => m.machine, value: (m) => m.mttrHours, label: (m) => dur(m.mttrHours),
+    tip: (m) => `${m.machine}: MTTR ${dur(m.mttrHours)} · ${m.closed} נסגרו מתוך ${m.failures}`,
+  });
+  const withMtbf = data.machines.filter((m) => m.mtbfHours != null).sort((a, b) => a.mtbfHours - b.mtbfHours).slice(0, 12);
+  meters(document.getElementById('mtbf'), withMtbf, {
+    name: (m) => m.machine, value: (m) => m.mtbfHours, label: (m) => dur(m.mtbfHours),
+    tip: (m) => `${m.machine}: MTBF ${dur(m.mtbfHours)} · ${m.failures} תקלות · השבתה ${dur(m.downtimeHours)}`,
+  });
+  meters(document.getElementById('cats'), data.categories, {
+    name: (c) => c.label, value: (c) => c.failures, label: (c) => c.failures,
+    tip: (c) => `${c.label}: ${c.failures} תקלות · MTTR ${dur(c.mttrHours)} · השבתה ${dur(c.downtimeHours)}`,
+  });
+  meters(document.getElementById('handlers'), data.handlers, {
+    name: (h) => h.name, value: (h) => h.closed, label: (h) => h.closed,
+    tip: (h) => `${h.name}: ${h.closed} קריאות נסגרו · MTTR ${dur(h.mttrHours)}`,
+  });
+  renderTable();
+}
+
+api('/api/categories').then((cats) => {
+  document.getElementById('category').innerHTML += cats.map((c) => `<option value="${c.key}">${esc(c.label)}</option>`).join('');
+}).finally(load);
+document.getElementById('days').onchange = load;
+document.getElementById('category').onchange = load;
+</script>
+</body>
+</html>

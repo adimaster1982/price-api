@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { categorize } from './categories.js';
 
 export const STATUSES = ['open', 'in_progress', 'waiting_parts', 'closed'];
 export const PRIORITIES = ['low', 'normal', 'urgent'];
@@ -58,7 +59,13 @@ export function openDb(file) {
       value TEXT NOT NULL
     );
   `);
-  return new Store(db);
+  // Migrations for databases created by earlier versions.
+  const cols = db.prepare('PRAGMA table_info(tickets)').all().map((c) => c.name);
+  if (!cols.includes('category')) db.exec(`ALTER TABLE tickets ADD COLUMN category TEXT NOT NULL DEFAULT ''`);
+  if (!cols.includes('closed_by')) db.exec(`ALTER TABLE tickets ADD COLUMN closed_by TEXT NOT NULL DEFAULT ''`);
+  const store = new Store(db);
+  store.backfillCategories();
+  return store;
 }
 
 export class Store {
@@ -78,15 +85,16 @@ export class Store {
   }
 
   // ---- tickets ----
-  createTicket({ title, machine = '', priority = 'normal', assignee = '', reporter = '', reporterPhone = '' }) {
+  createTicket({ title, machine = '', priority = 'normal', assignee = '', reporter = '', reporterPhone = '', category = '' }) {
     const t = now();
     const pr = PRIORITIES.includes(priority) ? priority : 'normal';
+    const cat = category || categorize(title);
     const res = this.db
       .prepare(
-        `INSERT INTO tickets(title, machine, priority, assignee, reporter, reporter_phone, created_at, updated_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO tickets(title, machine, priority, assignee, reporter, reporter_phone, created_at, updated_at, category)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(title, machine, pr, assignee, reporter, reporterPhone, t, t);
+      .run(title, machine, pr, assignee, reporter, reporterPhone, t, t, cat);
     const id = Number(res.lastInsertRowid);
     this.addEvent(id, 'created', reporter, title);
     return this.getTicket(id);
@@ -118,7 +126,7 @@ export class Store {
   updateTicket(id, fields, author = '') {
     const ticket = this.getTicket(id);
     if (!ticket) return null;
-    const allowed = ['title', 'machine', 'priority', 'status', 'assignee'];
+    const allowed = ['title', 'machine', 'priority', 'status', 'assignee', 'category'];
     const changes = [];
     for (const key of allowed) {
       if (fields[key] === undefined || fields[key] === null) continue;
@@ -135,17 +143,33 @@ export class Store {
     const values = changes.map(([, v]) => v);
     let extra = '';
     const status = changes.find(([k]) => k === 'status')?.[1];
-    if (status === 'closed') extra = ', closed_at = ?';
-    else if (status) extra = ', closed_at = NULL, escalated_at = NULL';
-    const params = [...values, t, ...(status === 'closed' ? [t] : []), Number(id)];
+    // Who closed it: the WhatsApp sender; a dashboard close keeps the assignee as the handler.
+    const closer = author && author !== 'לוח בקרה' ? author : '';
+    if (status === 'closed') extra = ', closed_at = ?, closed_by = ?';
+    else if (status) extra = ", closed_at = NULL, escalated_at = NULL, closed_by = ''";
+    const params = [...values, t, ...(status === 'closed' ? [t, closer] : []), Number(id)];
     this.db.prepare(`UPDATE tickets SET ${sets}, updated_at = ?${extra} WHERE id = ?`).run(...params);
 
     for (const [k, v] of changes) {
       const label =
-        k === 'status' ? `סטטוס: ${STATUS_HE[v]}` : k === 'priority' ? `דחיפות: ${PRIORITY_HE[v]}` : k === 'assignee' ? `אחראי: ${v}` : `${k}: ${v}`;
+        k === 'status' ? `סטטוס: ${STATUS_HE[v]}` : k === 'priority' ? `דחיפות: ${PRIORITY_HE[v]}` : k === 'assignee' ? `אחראי: ${v}` : k === 'category' ? `סוג תקלה: ${v}` : `${k}: ${v}`;
       this.addEvent(id, k === 'status' ? 'status' : 'change', author, label);
     }
     return this.getTicket(id);
+  }
+
+  // Give a category to tickets created before categories existed (title + first message).
+  backfillCategories() {
+    const rows = this.db.prepare(`SELECT id, title FROM tickets WHERE category = ''`).all();
+    for (const r of rows) {
+      const first = this.db.prepare(`SELECT text FROM events WHERE ticket_id = ? AND type = 'message' ORDER BY id LIMIT 1`).get(r.id);
+      this.db.prepare('UPDATE tickets SET category = ? WHERE id = ?').run(categorize(`${r.title} ${first?.text || ''}`), r.id);
+    }
+  }
+
+  /** All tickets opened since the given ISO time (for the analysis screen). */
+  ticketsSince(sinceIso) {
+    return this.db.prepare('SELECT * FROM tickets WHERE created_at >= ? ORDER BY created_at').all(sinceIso);
   }
 
   markEscalated(id) {

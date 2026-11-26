@@ -1,6 +1,7 @@
 // Transport-independent ticket logic: takes a normalized group message,
 // updates the store, and returns what should be sent back to the group.
 import { STATUS_HE, PRIORITY_HE } from './db.js';
+import { categorize } from './categories.js';
 
 const PRIORITY_ICON = { urgent: '🔴', normal: '🟡', low: '⚪' };
 
@@ -193,6 +194,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
         assignee: decision.assignee,
         reporter: msg.sender,
         reporterPhone: msg.senderPhone,
+        category: categorize(`${decision.title || ''} ${text}`),
       });
       store.addEvent(t.id, 'message', msg.sender, text);
       attachMedia(t.id, msg);
