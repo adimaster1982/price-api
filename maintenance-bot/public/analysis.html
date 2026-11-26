@@ -62,29 +62,32 @@
         <option value="180">חצי שנה</option><option value="365">שנה</option>
       </select>
     </label>
+    <label>סוג ציוד <select id="eqType"><option value="">הכל</option></select></label>
     <label>סוג תקלה <select id="category"><option value="">הכל</option></select></label>
   </div>
 
   <section class="tiles" id="tiles"></section>
 
   <section class="grid">
-    <div class="panel"><h2>MTTR לפי מכונה</h2><div class="sub">זמן תיקון ממוצע · הארוך ביותר למעלה</div><div id="mttr"></div></div>
-    <div class="panel"><h2>MTBF לפי מכונה</h2><div class="sub">זמן ממוצע בין תקלות · הבעייתית ביותר (הקצר ביותר) למעלה</div><div id="mtbf"></div></div>
+    <div class="panel"><h2>MTTR לפי ציוד</h2><div class="sub">זמן תיקון ממוצע · הארוך ביותר למעלה</div><div id="mttr"></div></div>
+    <div class="panel"><h2>MTBF לפי ציוד</h2><div class="sub">זמן ממוצע בין תקלות · הבעייתית ביותר (הקצר ביותר) למעלה</div><div id="mtbf"></div></div>
   </section>
 
   <section class="grid">
     <div class="panel"><h2>סוגי תקלות</h2><div class="sub">מספר תקלות · ריחוף מציג MTTR</div><div id="cats"></div></div>
+    <div class="panel"><h2>סוגי ציוד</h2><div class="sub">מספר תקלות · ריחוף מציג MTTR</div><div id="eqtypes"></div></div>
     <div class="panel"><h2>מי טיפל</h2><div class="sub">קריאות שנסגרו · ריחוף מציג MTTR</div><div id="handlers"></div></div>
   </section>
 
   <section class="panel">
-    <h2>כל המכונות</h2>
+    <h2>כל הציוד</h2>
     <div class="tablewrap"><table id="table"></table></div>
   </section>
 
   <section class="panel note">
     <b>איך מחושב:</b><br>
     <b>MTTR</b> – הזמן הממוצע מהדיווח בקבוצה ועד הסגירה, בקריאות שנסגרו בתקופה. כולל זמן המתנה לטכנאי ולחלקים.<br>
+    <b>ציוד</b> – כל שורה היא פריט ציוד (מכונת הזרקה, רובוט, מייבש וכו'). המק"ט והתיאור נלקחים מרשימת הציוד שהועלתה במסך "ציוד".<br>
     <b>MTBF</b> – (אורך התקופה פחות זמן ההשבתה) חלקי מספר התקלות, לכל מכונה. ההנחה היא שהמכונה אמורה לעבוד כל התקופה (24/7), כי אין לבוט לוח ייצור. במכונה עם תקלה אחת בתקופה זה רק אומדן גס.<br>
     <b>זמן השבתה</b> – הזמן שבו הייתה למכונה קריאה פתוחה (חפיפה בין שתי קריאות נספרת פעם אחת). קריאה פתוחה נספרת עד עכשיו – לכן חשוב לסגור קריאות שטופלו.<br>
     הנתונים טובים כמו הדיווח בקבוצה: תקלה שלא דווחה, או קריאה שלא נסגרה בזמן, משנות את המדדים.
@@ -104,7 +107,9 @@ function meters(el, rows, { name, value, label, tip }) {
 }
 
 const COLS = [
-  ['machine', 'מכונה', false, (m) => esc(m.machine)],
+  ['machine', 'ציוד', false, (m) => esc(m.machine)],
+  ['sku', 'מק"ט', false, (m) => esc(m.sku)],
+  ['description', 'תיאור', false, (m) => `<span title="${esc(m.description)}">${esc(m.description.length > 28 ? m.description.slice(0, 27) + '…' : m.description)}</span>`],
   ['failures', 'תקלות', true, (m) => m.failures],
   ['open', 'פתוחות', true, (m) => m.open],
   ['mttrHours', 'MTTR', true, (m) => dur(m.mttrHours)],
@@ -134,8 +139,9 @@ function renderTable() {
 async function load() {
   const days = document.getElementById('days').value;
   const category = document.getElementById('category').value;
+  const eqType = document.getElementById('eqType').value;
   document.getElementById('exportLink').href = `/export/tickets.csv?days=${days}`;
-  data = await api(`/api/analysis?days=${days}&category=${encodeURIComponent(category)}`);
+  data = await api(`/api/analysis?days=${days}&category=${encodeURIComponent(category)}&eqType=${encodeURIComponent(eqType)}`);
   const t = data.total;
   document.getElementById('tiles').innerHTML = [
     [t.failures, 'תקלות בתקופה'],
@@ -143,7 +149,7 @@ async function load() {
     [dur(t.mttrHours), 'MTTR – זמן תיקון ממוצע'],
     [dur(t.mtbfHours), 'MTBF ממוצע למכונה'],
     [dur(t.downtimeHours), 'זמן השבתה כולל'],
-    [t.machines, 'מכונות עם תקלות'],
+    [t.machines, 'פריטי ציוד עם תקלות'],
   ].map(([v, l]) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`).join('');
 
   const withMttr = data.machines.filter((m) => m.mttrHours != null).sort((a, b) => b.mttrHours - a.mttrHours).slice(0, 12);
@@ -160,6 +166,10 @@ async function load() {
     name: (c) => c.label, value: (c) => c.failures, label: (c) => c.failures,
     tip: (c) => `${c.label}: ${c.failures} תקלות · MTTR ${dur(c.mttrHours)} · השבתה ${dur(c.downtimeHours)}`,
   });
+  meters(document.getElementById('eqtypes'), data.eqTypes, {
+    name: (c) => c.label, value: (c) => c.failures, label: (c) => c.failures,
+    tip: (c) => `${c.label}: ${c.failures} תקלות · MTTR ${dur(c.mttrHours)} · השבתה ${dur(c.downtimeHours)}`,
+  });
   meters(document.getElementById('handlers'), data.handlers, {
     name: (h) => h.name, value: (h) => h.closed, label: (h) => h.closed,
     tip: (h) => `${h.name}: ${h.closed} קריאות נסגרו · MTTR ${dur(h.mttrHours)}`,
@@ -167,9 +177,21 @@ async function load() {
   renderTable();
 }
 
-api('/api/categories').then((cats) => {
-  document.getElementById('category').innerHTML += cats.map((c) => `<option value="${c.key}">${esc(c.label)}</option>`).join('');
-}).finally(load);
+// Open with ?eqType=dryer etc. (links from the equipment page).
+const params = new URLSearchParams(location.search);
+Promise.all([
+  api('/api/categories').then((cats) => {
+    document.getElementById('category').innerHTML += cats.map((c) => `<option value="${c.key}">${esc(c.label)}</option>`).join('');
+  }),
+  api('/api/equipment').then((e) => {
+    document.getElementById('eqType').innerHTML += Object.entries(e.types).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+  }),
+]).finally(() => {
+  if (params.get('eqType')) document.getElementById('eqType').value = params.get('eqType');
+  if (params.get('days')) document.getElementById('days').value = params.get('days');
+  load();
+});
+document.getElementById('eqType').onchange = load;
 document.getElementById('days').onchange = load;
 document.getElementById('category').onchange = load;
 </script>

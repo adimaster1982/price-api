@@ -4,6 +4,7 @@
 //   MTBF = (period length − downtime) / number of failures, per machine.
 //          Assumes the machine was meant to run the whole period (24/7); no production calendar.
 import { CATEGORY_LABEL } from './categories.js';
+import { TYPES as EQ_TYPES, equipmentLabel } from './equipment.js';
 
 const H = 3_600_000;
 const avg = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
@@ -40,10 +41,12 @@ function summarize(list, nowMs) {
   };
 }
 
-export function analyze(tickets, { days = 30, now = Date.now(), category = '' } = {}) {
+export function analyze(tickets, { days = 30, now = Date.now(), category = '', eqType = '' } = {}) {
   const periodHours = days * 24;
   const since = now - days * 24 * H;
-  const rows = tickets.filter((t) => Date.parse(t.created_at) >= since && (!category || t.category === category));
+  const rows = tickets.filter(
+    (t) => Date.parse(t.created_at) >= since && (!category || t.category === category) && (!eqType || (t.eq_type || '') === eqType)
+  );
 
   const group = (keyFn) => {
     const m = new Map();
@@ -55,7 +58,8 @@ export function analyze(tickets, { days = 30, now = Date.now(), category = '' } 
     return m;
   };
 
-  const machines = [...group((t) => t.machine || 'ללא מכונה')].map(([machine, list]) => {
+  // One row per piece of equipment ("מכונת הזרקה 339", "רובוט 339", "מייבש 705").
+  const machines = [...group((t) => equipmentLabel(t) || 'ללא ציוד')].map(([machine, list]) => {
     const s = summarize(list, now);
     s.downtimeHours = unionHours(list, now); // a machine is down once, even with two open tickets
     const cats = {};
@@ -66,6 +70,9 @@ export function analyze(tickets, { days = 30, now = Date.now(), category = '' } 
       ...s,
       mtbfHours: s.failures ? Math.max(0, periodHours - s.downtimeHours) / s.failures : null,
       topCategory: CATEGORY_LABEL[topCat] || 'אחר',
+      eqType: list[0].eq_type || '',
+      sku: list.find((t) => t.eq_sku)?.eq_sku || '',
+      description: list.find((t) => t.eq_desc)?.eq_desc || '',
       lastFailure: list.reduce((a, t) => (t.created_at > a ? t.created_at : a), ''),
     };
   });
@@ -73,6 +80,10 @@ export function analyze(tickets, { days = 30, now = Date.now(), category = '' } 
 
   const categories = [...group((t) => t.category || 'other')]
     .map(([key, list]) => ({ key, label: CATEGORY_LABEL[key] || 'אחר', ...summarize(list, now) }))
+    .sort((a, b) => b.failures - a.failures);
+
+  const eqTypes = [...group((t) => t.eq_type || '')]
+    .map(([key, list]) => ({ key, label: EQ_TYPES[key] || 'לא זוהה ציוד', ...summarize(list, now) }))
     .sort((a, b) => b.failures - a.failures);
 
   const handlers = [...group((t) => handlerOf(t) || 'לא ידוע')]
@@ -86,9 +97,11 @@ export function analyze(tickets, { days = 30, now = Date.now(), category = '' } 
   return {
     days,
     category,
+    eqType,
     total: { ...total, machines: machines.length, mtbfHours: avg(mtbfs) },
     machines,
     categories,
+    eqTypes,
     handlers,
   };
 }

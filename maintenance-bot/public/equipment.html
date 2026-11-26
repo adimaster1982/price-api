@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>רשימת ציוד</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #fff; --text: #1c1f24; --muted: #667085; --line: #e3e6ea;
+    --accent: #1f6feb; --track: #eef0f3; --ok: #12805c; --bad: #d92d20;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121417; --card: #1c1f24; --text: #e8eaed; --muted: #9aa3af; --line: #2c3037;
+      --accent: #5b9dff; --track: #262a31; --ok: #3cc58f; --bad: #ff6b5e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, "Segoe UI", Arial, sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0; } h2 { font-size: 15px; margin: 0 0 8px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 0 16px 40px; }
+  .btn, input, select { text-decoration: none; border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 7px 12px; border-radius: 8px; font: inherit; }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; cursor: pointer; text-align: start; font: inherit; color: inherit; }
+  .tile.active { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .tile b { display: block; font-size: 22px; } .tile span { color: var(--muted); font-size: 13px; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-align: start; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num, th.num { text-align: end; font-variant-numeric: tabular-nums; }
+  tbody tr:hover { background: var(--track); }
+  .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
+  .empty { color: var(--muted); text-align: center; padding: 20px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🏭 רשימת ציוד</h1>
+  <div class="row"><a class="btn" href="/">← קריאות</a><a class="btn" href="/analysis.html">📊 ניתוח</a></div>
+</header>
+<main>
+  <section class="panel">
+    <h2>העלאת דוח ציוד</h2>
+    <div class="muted" style="margin-bottom:8px">קובץ Excel (או CSV) עם העמודות: קבוצת ציוד · ציוד (מק"ט) · תיאור ציוד · מספר ציוד ברביב. העלאה מחליפה את הרשימה הקיימת. הקובץ נשמר רק בטלפון של הבוט.</div>
+    <div class="row">
+      <input type="file" id="file" accept=".xlsx,.csv">
+      <button class="btn primary" id="upload">העלאה</button>
+      <span id="msg" class="msg"></span>
+    </div>
+    <div class="muted" id="imported" style="margin-top:8px"></div>
+  </section>
+
+  <section class="tiles" id="tiles"></section>
+
+  <section class="panel">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <h2 id="listTitle" style="margin:0">כל הציוד</h2>
+      <div class="row">
+        <input id="search" placeholder="חיפוש מספר / מק״ט / תיאור" size="22">
+        <a class="btn" id="historyLink" href="/analysis.html?days=365">📊 היסטוריית תקלות</a>
+      </div>
+    </div>
+    <div class="tablewrap"><table id="table"></table></div>
+  </section>
+</main>
+<script>
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const api = async (url, opts) => { const r = await fetch(url, opts); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.statusText); return j; };
+let data = null, failures = {}, type = '';
+try { type = localStorage.getItem('eqtype') || ''; } catch {}
+
+function render() {
+  const t = data.types;
+  const total = data.items.length;
+  document.getElementById('tiles').innerHTML =
+    `<button class="tile ${type === '' ? 'active' : ''}" data-t=""><b>${total}</b><span>הכל</span></button>` +
+    Object.entries(t).map(([k, v]) => `<button class="tile ${type === k ? 'active' : ''}" data-t="${k}"><b>${data.counts[k] || 0}</b><span>${esc(v)}</span></button>`).join('');
+  document.querySelectorAll('.tile').forEach((b) => b.onclick = () => { type = b.dataset.t; try { localStorage.setItem('eqtype', type); } catch {} render(); });
+  document.getElementById('listTitle').textContent = type ? t[type] : 'כל הציוד';
+  document.getElementById('historyLink').href = `/analysis.html?days=365${type ? '&eqType=' + type : ''}`;
+
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const rows = data.items.filter((i) => (!type || i.type === type) && (!q || `${i.number} ${i.sku} ${i.description}`.toLowerCase().includes(q)));
+  const el = document.getElementById('table');
+  if (!total) { el.innerHTML = '<tr><td class="empty">עוד לא הועלתה רשימת ציוד</td></tr>'; return; }
+  if (!rows.length) { el.innerHTML = '<tr><td class="empty">לא נמצא ציוד</td></tr>'; return; }
+  el.innerHTML = `<thead><tr><th>סוג</th><th class="num">מס' ציוד</th><th>מק"ט</th><th>תיאור</th><th class="num">תקלות (שנה)</th></tr></thead>
+    <tbody>${rows.map((i) => {
+      const label = `${t[i.type]} ${i.number}`;
+      return `<tr><td>${esc(t[i.type])}</td><td class="num">${esc(i.number)}</td><td>${esc(i.sku)}</td><td>${esc(i.description)}</td><td class="num">${failures[label] || ''}</td></tr>`;
+    }).join('')}</tbody>`;
+}
+
+async function load() {
+  data = await api('/api/equipment');
+  document.getElementById('imported').textContent = data.importedAt
+    ? `הרשימה עודכנה: ${new Date(data.importedAt).toLocaleString('he-IL')}` : '';
+  const a = await api('/api/analysis?days=365');
+  failures = Object.fromEntries(a.machines.map((m) => [m.machine, m.failures]));
+  render();
+}
+
+document.getElementById('search').oninput = render;
+document.getElementById('upload').onclick = async () => {
+  const f = document.getElementById('file').files[0];
+  const msg = document.getElementById('msg');
+  if (!f) { msg.className = 'msg bad'; msg.textContent = 'בחרו קובץ'; return; }
+  msg.className = 'msg'; msg.textContent = 'מעלה…';
+  try {
+    const r = await api('/api/equipment/import', { method: 'POST', body: f });
+    msg.className = 'msg ok'; msg.textContent = `✅ נטענו ${r.imported} פריטי ציוד`;
+    await load();
+  } catch (e) { msg.className = 'msg bad'; msg.textContent = '❌ ' + e.message; }
+};
+load();
+</script>
+</body>
+</html>

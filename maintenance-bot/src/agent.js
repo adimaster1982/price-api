@@ -2,6 +2,7 @@
 // updates the store, and returns what should be sent back to the group.
 import { STATUS_HE, PRIORITY_HE } from './db.js';
 import { categorize } from './categories.js';
+import { detectEquipment, TYPES as EQ_TYPES } from './equipment.js';
 
 const PRIORITY_ICON = { urgent: '🔴', normal: '🟡', low: '⚪' };
 
@@ -187,16 +188,21 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
     }
 
     if (decision.action === 'new_ticket') {
+      const eq = detectEquipment(text, decision.machine || '');
+      // "תנור 705": 705 is the dryer's number, not an injection machine.
+      const machine = ['dryer', 'color', 'heater', 'chiller'].includes(eq.type) && eq.number ? `${EQ_TYPES[eq.type]} ${eq.number}` : decision.machine;
       const t = store.createTicket({
         title: decision.title || text.slice(0, 80),
-        machine: decision.machine,
+        machine,
+        eqType: eq.type,
+        eqNumber: eq.number,
         priority: decision.priority,
         assignee: decision.assignee,
         reporter: msg.sender,
         reporterPhone: msg.senderPhone,
         category: categorize(`${decision.title || ''} ${text}`),
       });
-      store.addEvent(t.id, 'message', msg.sender, text);
+      if (text !== t.title) store.addEvent(t.id, 'message', msg.sender, text);
       attachMedia(t.id, msg);
       flushPending(msg.senderPhone, t.id);
       store.linkMessage(msg.id, t.id);

@@ -6,6 +6,8 @@ import { STATUS_HE } from './db.js';
 import { formatDuration } from './agent.js';
 import { analyze, handlerOf } from './analysis.js';
 import { CATEGORIES, OTHER, CATEGORY_LABEL } from './categories.js';
+import { TYPES as EQ_TYPES, parseEquipmentRows, equipmentLabel } from './equipment.js';
+import { readXlsxRows } from './xlsx.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -67,8 +69,13 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
   app.patch('/api/tickets/:id', async (req, res) => {
     const before = store.getTicket(req.params.id);
     if (!before) return res.status(404).json({ error: 'not found' });
-    const { title, machine, priority, status, assignee, category, announce } = req.body || {};
-    const t = store.updateTicket(before.id, { title, machine, priority, status, assignee, category }, 'לוח בקרה');
+    const { title, machine, priority, status, assignee, category, announce, eq_type, eq_number } = req.body || {};
+    let t = store.updateTicket(before.id, { title, machine, priority, status, assignee, category }, 'לוח בקרה');
+    if (eq_type !== undefined && (eq_type !== before.eq_type || String(eq_number ?? '') !== before.eq_number)) {
+      store.setTicketEquipment(before.id, eq_type, eq_number);
+      store.addEvent(before.id, 'change', 'לוח בקרה', `ציוד: ${equipmentLabel({ eq_type, eq_number }) || '—'}`);
+      t = store.getTicket(before.id);
+    }
     const groupId = getGroupId();
     if (config.groupFeedback === 'messages' && announce !== false && groupId && status && status !== before.status) {
       const msg =
@@ -120,12 +127,38 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
     res.set('Content-Type', 'text/csv; charset=utf-8').set('Content-Disposition', 'attachment; filename="unrecognized.csv"').send('\uFEFF' + csv);
   });
 
+  // ---- equipment list ----
+  app.get('/api/equipment', (_req, res) => {
+    const items = store.listEquipment();
+    const counts = Object.fromEntries(Object.keys(EQ_TYPES).map((k) => [k, items.filter((i) => i.type === k).length]));
+    res.json({ importedAt: store.getSetting('equipment_imported_at'), types: EQ_TYPES, counts, items });
+  });
+
+  // Upload the factory equipment report (.xlsx, or .csv) – replaces the list.
+  app.post('/api/equipment/import', express.raw({ type: () => true, limit: '20mb' }), (req, res) => {
+    try {
+      const buf = req.body;
+      if (!buf?.length) return res.status(400).json({ error: 'empty file' });
+      const rows =
+        buf[0] === 0x50 && buf[1] === 0x4b // "PK" = zip = xlsx
+          ? readXlsxRows(buf)
+          : buf.toString('utf8').replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean).map((l) => l.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map((c) => c.replace(/^"|"$/g, '').replace(/""/g, '"').trim()));
+      const items = parseEquipmentRows(rows);
+      if (!items.length) return res.status(400).json({ error: 'no equipment rows recognised – expected columns: קבוצת ציוד, ציוד, תיאור ציוד, מספר ציוד' });
+      store.replaceEquipment(items);
+      res.json({ ok: true, imported: items.length });
+    } catch (e) {
+      logger.error('[web] equipment import failed', e);
+      res.status(400).json({ error: e.message });
+    }
+  });
+
   app.get('/api/categories', (_req, res) => res.json([...CATEGORIES, OTHER].map(({ key, label }) => ({ key, label }))));
 
   app.get('/api/analysis', (req, res) => {
     const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 730);
     const since = new Date(Date.now() - days * 86_400_000).toISOString();
-    res.json(analyze(store.ticketsSince(since), { days, category: String(req.query.category || '') }));
+    res.json(analyze(store.ticketsSince(since), { days, category: String(req.query.category || ''), eqType: String(req.query.eqType || '') }));
   });
 
   // All tickets as CSV for Excel (management reports).
@@ -135,9 +168,9 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const fmt = (iso) => (iso ? iso.slice(0, 16).replace('T', ' ') : '');
     const hours = (t) => (t.closed_at ? ((Date.parse(t.closed_at) - Date.parse(t.created_at)) / 3_600_000).toFixed(2) : '');
-    const head = 'מספר,מכונה,סוג תקלה,תקלה,דחיפות,סטטוס,דיווח,טיפל,נפתחה,נסגרה,זמן תיקון (שעות)';
+    const head = 'מספר,מכונה,סוג ציוד,מספר ציוד,מק"ט ציוד,תיאור ציוד,סוג תקלה,תקלה,דחיפות,סטטוס,דיווח,טיפל,נפתחה,נסגרה,זמן תיקון (שעות)';
     const lines = rows.map((t) =>
-      [t.id, t.machine, CATEGORY_LABEL[t.category] || 'אחר', t.title, t.priority, STATUS_HE[t.status], t.reporter, handlerOf(t), fmt(t.created_at), fmt(t.closed_at), hours(t)].map(q).join(',')
+      [t.id, t.machine, EQ_TYPES[t.eq_type] || '', t.eq_number, t.eq_sku, t.eq_desc, CATEGORY_LABEL[t.category] || 'אחר', t.title, t.priority, STATUS_HE[t.status], t.reporter, handlerOf(t), fmt(t.created_at), fmt(t.closed_at), hours(t)].map(q).join(',')
     );
     res.set('Content-Type', 'text/csv; charset=utf-8').set('Content-Disposition', 'attachment; filename="tickets.csv"').send('\uFEFF' + [head, ...lines].join('\r\n'));
   });

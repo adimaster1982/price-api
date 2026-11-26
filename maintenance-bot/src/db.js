@@ -54,6 +54,14 @@ export function openDb(file) {
       has_media  INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS equipment (
+      type        TEXT NOT NULL,
+      number      TEXT NOT NULL,
+      sku         TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      grp         TEXT NOT NULL DEFAULT '',
+      PRIMARY KEY (type, number, sku)
+    );
     CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -64,6 +72,9 @@ export function openDb(file) {
   if (!cols.includes('category')) db.exec(`ALTER TABLE tickets ADD COLUMN category TEXT NOT NULL DEFAULT ''`);
   if (!cols.includes('closed_by')) db.exec(`ALTER TABLE tickets ADD COLUMN closed_by TEXT NOT NULL DEFAULT ''`);
   if (!cols.includes('deleted_at')) db.exec(`ALTER TABLE tickets ADD COLUMN deleted_at TEXT`);
+  for (const c of ['eq_type', 'eq_number', 'eq_sku', 'eq_desc']) {
+    if (!cols.includes(c)) db.exec(`ALTER TABLE tickets ADD COLUMN ${c} TEXT NOT NULL DEFAULT ''`);
+  }
   const store = new Store(db);
   store.backfillCategories();
   return store;
@@ -86,7 +97,7 @@ export class Store {
   }
 
   // ---- tickets ----
-  createTicket({ title, machine = '', priority = 'normal', assignee = '', reporter = '', reporterPhone = '', category = '' }) {
+  createTicket({ title, machine = '', priority = 'normal', assignee = '', reporter = '', reporterPhone = '', category = '', eqType = '', eqNumber = '' }) {
     const t = now();
     const pr = PRIORITIES.includes(priority) ? priority : 'normal';
     const cat = category || categorize(title);
@@ -97,6 +108,7 @@ export class Store {
       )
       .run(title, machine, pr, assignee, reporter, reporterPhone, t, t, cat);
     const id = Number(res.lastInsertRowid);
+    if (eqType) this.setTicketEquipment(id, eqType, eqNumber);
     this.addEvent(id, 'created', reporter, title);
     return this.getTicket(id);
   }
@@ -174,6 +186,44 @@ export class Store {
   /** All tickets opened since the given ISO time (for the analysis screen). */
   ticketsSince(sinceIso) {
     return this.db.prepare('SELECT * FROM tickets WHERE created_at >= ? AND deleted_at IS NULL ORDER BY created_at').all(sinceIso);
+  }
+
+  // ---- equipment (imported from the factory equipment report) ----
+  replaceEquipment(items) {
+    this.db.exec('BEGIN');
+    try {
+      this.db.exec('DELETE FROM equipment');
+      const ins = this.db.prepare('INSERT OR REPLACE INTO equipment(type, number, sku, description, grp) VALUES(?, ?, ?, ?, ?)');
+      for (const e of items) ins.run(e.type, e.number, e.sku, e.description, e.group || '');
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
+    this.setSetting('equipment_imported_at', now());
+    // Re-link existing tickets to the new list.
+    for (const t of this.db.prepare(`SELECT id, eq_type, eq_number FROM tickets WHERE eq_type != ''`).all()) {
+      this.setTicketEquipment(t.id, t.eq_type, t.eq_number);
+    }
+  }
+
+  listEquipment() {
+    return this.db.prepare('SELECT * FROM equipment ORDER BY type, CAST(number AS INTEGER)').all();
+  }
+
+  findEquipment(type, number) {
+    if (!type || !number) return null;
+    return this.db.prepare('SELECT * FROM equipment WHERE type = ? AND number = ? LIMIT 1').get(type, String(Number(number))) || null;
+  }
+
+  /** Link a ticket to equipment; fills SKU + description when the item is in the list. */
+  setTicketEquipment(id, type, number) {
+    const num = number ? String(Number(number)) : '';
+    const e = this.findEquipment(type, num);
+    this.db
+      .prepare('UPDATE tickets SET eq_type = ?, eq_number = ?, eq_sku = ?, eq_desc = ? WHERE id = ?')
+      .run(type || '', num, e?.sku || '', e?.description || '', Number(id));
+    return e;
   }
 
   /** "Not a real ticket": hidden from lists, reports and the bot, but kept so it can be restored. */

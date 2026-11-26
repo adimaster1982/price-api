@@ -60,6 +60,7 @@
   <div class="row" style="margin:0">
     <span id="conn" class="pill">…</span>
     <a class="btn" href="/analysis.html">📊 ניתוח MTTR / MTBF</a>
+    <a class="btn" href="/equipment.html">🏭 ציוד</a>
     <a class="btn" href="/export/tickets.csv" title="כל הקריאות לאקסל">📥 ייצוא</a>
     <a class="btn" href="/export/unrecognized.csv" title="הודעות שהבוט לא זיהה – לשיפור הזיהוי ולרוסית בהמשך">📥 לא זוהו</a>
     <button class="btn primary" id="newBtn">+ קריאה חדשה</button>
@@ -71,6 +72,7 @@
   <section class="charts">
     <div class="panel"><h2>תקלות לפי מכונה · 30 יום</h2><div id="byMachine"></div></div>
     <div class="panel"><h2>תקלות לפי סוג · 30 יום</h2><div id="byCategory"></div></div>
+    <div class="panel"><h2>תקלות לפי סוג ציוד · 30 יום</h2><div id="byEqType"></div></div>
   </section>
   <nav class="tabs" id="tabs"></nav>
   <section id="list"></section>
@@ -84,6 +86,8 @@ const PR = { urgent: '🔴 דחופה', normal: '🟡 רגילה', low: '⚪ נ�
 const TABS = [['active', 'פעילות'], ['open', 'פתוחות'], ['in_progress', 'בטיפול'], ['waiting_parts', 'ממתינות לחלק'], ['closed', 'סגורות'], ['', 'הכל'], ['deleted', '🗑️ נמחקו']];
 let tab = 'active';
 let CATS = [];
+let EQT = {};
+const eqLabel = (t) => t.eq_type ? `${EQT[t.eq_type] || t.eq_type}${t.eq_number ? ' ' + t.eq_number : ''}` : '';
 const catLabel = (k) => (CATS.find((c) => c.key === k) || {}).label || 'אחר';
 const dur = (h) => h == null ? '—' : h < 1 ? `${Math.round(h * 60)} דק'` : h < 48 ? `${h.toFixed(1)} ש'` : `${(h / 24).toFixed(1)} ימים`;
 
@@ -136,6 +140,10 @@ async function loadBreakdown() {
     name: (m) => m.machine, value: (m) => m.failures,
     tip: (m) => `${m.machine}: ${m.failures} תקלות · פתוחות ${m.open} · MTTR ${dur(m.mttrHours)} · סוג נפוץ: ${m.topCategory}`,
   });
+  meters(document.getElementById('byEqType'), a.eqTypes, {
+    name: (c) => c.label, value: (c) => c.failures,
+    tip: (c) => `${c.label}: ${c.failures} תקלות · MTTR ${dur(c.mttrHours)}`,
+  });
   meters(document.getElementById('byCategory'), a.categories, {
     name: (c) => c.label, value: (c) => c.failures,
     tip: (c) => `${c.label}: ${c.failures} תקלות · MTTR ${dur(c.mttrHours)}`,
@@ -167,7 +175,7 @@ async function loadList() {
   el.innerHTML = rows.map((t) => `
     <div class="ticket ${t.priority}" data-id="${t.id}">
       <div class="top"><b>#${t.id} ${esc(t.machine ? t.machine + ' – ' : '')}${esc(t.title)}</b><span>${ST[t.status]}</span></div>
-      <div class="meta"><span class="chip">${esc(catLabel(t.category))}</span> ${PR[t.priority]} · דיווח: ${esc(t.reporter)} · ${
+      <div class="meta">${t.eq_type ? `<span class="chip" title="${esc(t.eq_desc)}">🏭 ${esc(eqLabel(t))}${t.eq_sku ? ' · ' + esc(t.eq_sku) : t.eq_number ? ' · ⚠️ לא ברשימה' : ''}</span> ` : ''}<span class="chip">${esc(catLabel(t.category))}</span> ${PR[t.priority]} · דיווח: ${esc(t.reporter)} · ${
         t.status === 'closed'
           ? `טיפל: ${esc(t.assignee || t.closed_by || 'לא ידוע')} · זמן תיקון: ${dur((Date.parse(t.closed_at) - Date.parse(t.created_at)) / 36e5)} · נסגרה ${fmt(t.closed_at)}`
           : `${t.assignee ? 'אחראי: ' + esc(t.assignee) + ' · ' : ''}נפתחה לפני ${age(t.created_at)}`
@@ -187,6 +195,11 @@ async function openTicket(id) {
       <label>דחיפות <select id="f_priority">${Object.entries(PR).map(([k, v]) => `<option value="${k}" ${k === t.priority ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
       <label>סוג תקלה <select id="f_category">${CATS.map((c) => `<option value="${c.key}" ${c.key === t.category ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></label>
     </div>
+    <div class="row">
+      <label>סוג ציוד <select id="f_eqtype"><option value="">—</option>${Object.entries(EQT).map(([k, v]) => `<option value="${k}" ${k === t.eq_type ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+      <label>מס' ציוד <input id="f_eqnum" value="${esc(t.eq_number)}" size="5" inputmode="numeric"></label>
+    </div>
+    <div class="row" style="font-size:14px;color:var(--muted)">${t.eq_sku ? `מק"ט: <b style="color:var(--text)">${esc(t.eq_sku)}</b> · ${esc(t.eq_desc)}` : t.eq_type ? '⚠️ הציוד לא נמצא ברשימת הציוד – בדקו סוג ומספר' : ''}</div>
     ${t.status === 'closed' ? `<div class="row" style="color:var(--muted);font-size:14px">טיפל: ${esc(t.assignee || t.closed_by || 'לא ידוע')} · זמן תיקון: ${dur((Date.parse(t.closed_at) - Date.parse(t.created_at)) / 36e5)}</div>` : ''}
     <div class="row">${Object.entries(ST).map(([k, v]) => `<button class="btn ${k === t.status ? 'primary' : ''}" data-status="${k}">${v}</button>`).join('')}</div>
     <ul class="events">${t.events.map((e) => `<li><small>${fmt(e.created_at)} · ${esc(e.author)}</small><br>${esc(e.text)}${e.media_path && e.media_path.endsWith('.jpg') ? `<a href="/media/${encodeURIComponent(e.media_path)}" target="_blank"><img src="/media/${encodeURIComponent(e.media_path)}" loading="lazy"></a>` : e.media_path ? ` <a href="/media/${encodeURIComponent(e.media_path)}" target="_blank">פתח קובץ</a>` : ''}</li>`).join('')}</ul>
@@ -210,7 +223,7 @@ async function openTicket(id) {
   const restore = dlg.querySelector('#restore');
   if (restore) restore.onclick = async () => { await api(`/api/tickets/${t.id}/restore`, { method: 'POST' }); dlg.close(); refresh(); };
   dlg.querySelector('#save').onclick = async () => {
-    await patch({ machine: f_machine.value, assignee: f_assignee.value, priority: f_priority.value, category: f_category.value });
+    await patch({ machine: f_machine.value, assignee: f_assignee.value, priority: f_priority.value, category: f_category.value, eq_type: f_eqtype.value, eq_number: f_eqnum.value.trim() });
     const note = dlg.querySelector('#note').value.trim();
     if (note) await api(`/api/tickets/${t.id}/notes`, { method: 'POST', body: JSON.stringify({ text: note }) });
     dlg.close(); refresh();
@@ -236,7 +249,10 @@ async function refresh() {
   try { await Promise.all([loadStatus(), loadStats(), loadBreakdown(), loadList()]); } catch (e) { console.error(e); }
 }
 renderTabs();
-api('/api/categories').then((c) => { CATS = c; }).catch(() => {}).finally(refresh);
+Promise.all([
+  api('/api/categories').then((c) => { CATS = c; }),
+  api('/api/equipment').then((e) => { EQT = e.types; }),
+]).catch(() => {}).finally(refresh);
 setInterval(() => { if (!document.getElementById('dlg').open) refresh(); }, 20000);
 // While linking, refresh the QR / pairing code every few seconds (WhatsApp rotates it every ~20s).
 setInterval(() => { if (!waConnected) loadStatus().catch(() => {}); }, 3000);
