@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { categorize } from './categories.js';
+import { detectEquipment } from './equipment.js';
 
 export const STATUSES = ['open', 'in_progress', 'waiting_parts', 'closed'];
 export const PRIORITIES = ['low', 'normal', 'urgent'];
@@ -77,6 +78,7 @@ export function openDb(file) {
   }
   const store = new Store(db);
   store.backfillCategories();
+  store.backfillEquipment();
   return store;
 }
 
@@ -180,6 +182,16 @@ export class Store {
     for (const r of rows) {
       const first = this.db.prepare(`SELECT text FROM events WHERE ticket_id = ? AND type = 'message' ORDER BY id LIMIT 1`).get(r.id);
       this.db.prepare('UPDATE tickets SET category = ? WHERE id = ?').run(categorize(`${r.title} ${first?.text || ''}`), r.id);
+    }
+  }
+
+  // Tickets opened before equipment detection existed: detect the equipment from title + first message.
+  backfillEquipment() {
+    const rows = this.db.prepare(`SELECT id, title, machine FROM tickets WHERE eq_type = ''`).all();
+    for (const r of rows) {
+      const first = this.db.prepare(`SELECT text FROM events WHERE ticket_id = ? AND type = 'message' ORDER BY id LIMIT 1`).get(r.id);
+      const eq = detectEquipment(`${r.title} ${first?.text || ''}`, r.machine);
+      if (eq.type) this.setTicketEquipment(r.id, eq.type, eq.number);
     }
   }
 

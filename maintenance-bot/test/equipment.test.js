@@ -49,3 +49,13 @@ test('new ticket gets SKU + description from the list; unknown items are flagged
   store.replaceEquipment(parseEquipmentRows([...ROWS, ['Injection Machines', 'EIM-T512', 'מכונה 512', '512']]));
   assert.equal(store.getTicket(3).eq_sku, 'EIM-T512');
 });
+
+test('tickets opened before the equipment feature are linked on start and on import', () => {
+  const store = openDb(':memory:');
+  store.db.prepare(`INSERT INTO tickets(title, machine, created_at, updated_at) VALUES('339 מפילה מוצרים', 'מכונה 339', '2026-11-20T08:00:00Z', '2026-11-20T08:00:00Z')`).run();
+  store.backfillEquipment();
+  assert.equal(store.getTicket(1).eq_type, 'robot');
+  assert.equal(store.getTicket(1).eq_sku, '');
+  store.replaceEquipment(parseEquipmentRows(ROWS));
+  assert.equal(store.getTicket(1).eq_sku, 'ERT-T339');
+});
