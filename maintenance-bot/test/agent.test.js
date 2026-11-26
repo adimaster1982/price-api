@@ -156,3 +156,17 @@ test('open-tickets report ends with how to answer', async () => {
   assert.match(text, /447 הזמנתי חלק/);
   assert.doesNotMatch(buildDailySummary(openDb(':memory:')), /לעדכון/);
 });
+
+test('commands work with "!" at the start, at the end, or without it', async () => {
+  const { store, agent, calls } = setup([]);
+  store.createTicket({ title: 'תקלה', machine: 'מכונה 447' });
+  for (const t of ['!פתוחות', 'פתוחות!', 'פתוחות', '\u200fפתוחות!']) {
+    const [r] = await agent.handleMessage(msg('c' + t, t));
+    assert.match(r.text, /קריאות פתוחות \(1\)/, t);
+  }
+  const [x] = await agent.handleMessage(msg('k', 'קריאה 1!'));
+  assert.match(x.text, /#1/);
+  const [y] = await agent.handleMessage(msg('s', 'סגור 1!'));
+  assert.match(y.text, /נסגרה/);
+  assert.equal(calls.length, 0);
+});

@@ -185,24 +185,28 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
       return [{ type: 'react', emoji: '📎', msgId: msg.id }];
     }
 
-    // 2. Deterministic commands.
-    if (/^!(פתוחות|open)(?=\s|$)/i.test(text)) {
+    // 2. Deterministic commands. In Hebrew the "!" often lands at the end ("פתוחות!"), and the
+    //    one-word commands also work without it ("פתוחות").
+    let cmd = text.replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim();
+    if (!cmd.startsWith('!') && cmd.endsWith('!')) cmd = '!' + cmd.replace(/!+$/, '').trim();
+    if (/^(פתוחות|עזרה|הנחיות)$/.test(cmd)) cmd = '!' + cmd;
+    if (/^!(פתוחות|open)(?=\s|$)/i.test(cmd)) {
       return [{ type: 'reply', quoteId: msg.id, text: formatOpenList(store.openTickets(), { withHelp: true }) }];
     }
-    if (/^!(הנחיות|welcome)(?=\s|$)/i.test(text)) {
+    if (/^!(הנחיות|welcome)(?=\s|$)/i.test(cmd)) {
       return [{ type: 'reply', text: WELCOME_TEXT }];
     }
-    if (/^!(עזרה|help)(?=\s|$)/i.test(text)) {
+    if (/^!(עזרה|help)(?=\s|$)/i.test(cmd)) {
       return [{ type: 'reply', quoteId: msg.id, text: HELP_TEXT }];
     }
-    const showCmd = text.match(/^!(?:קריאה|ticket)\s*#?(\d+)/i);
+    const showCmd = cmd.match(/^!(?:קריאה|ticket)\s*#?(\d+)/i);
     if (showCmd) {
       const t = store.getTicket(Number(showCmd[1]));
       if (!t || t.deleted_at) return [{ type: 'reply', quoteId: msg.id, text: `לא נמצאה קריאה #${showCmd[1]}` }];
       const hist = store.events(t.id).slice(-8).map((e) => `• ${e.created_at.slice(5, 16).replace('T', ' ')} ${e.author}: ${e.text}`).join('\n');
       return [{ type: 'reply', quoteId: msg.id, ticketId: t.id, text: `${ticketShort(t)}\n${hist}` }];
     }
-    const closeCmd = text.match(/^!(?:סגור|close)\s*#?(\d+)/i);
+    const closeCmd = cmd.match(/^!(?:סגור|close)\s*#?(\d+)/i);
     if (closeCmd) {
       const t = activeTicket(Number(closeCmd[1]));
       if (!t) return [{ type: 'reply', quoteId: msg.id, text: `לא נמצאה קריאה פתוחה #${closeCmd[1]}` }];
