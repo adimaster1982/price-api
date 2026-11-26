@@ -4,7 +4,7 @@ import { formatOpenList, formatDuration, ticketShort } from './agent.js';
 export function buildDailySummary(store) {
   const open = store.openTickets();
   const s = store.stats(1);
-  const lines = [`☀️ סיכום אחזקה בוקר`];
+  const lines = [`☀️ דוח בוקר – אחזקה`];
   lines.push(`ב-24 שעות אחרונות: נפתחו ${s.opened} · נסגרו ${s.closed}` + (s.mttrHours != null ? ` · זמן טיפול ממוצע ${formatDuration(s.mttrHours * 3_600_000)}` : ''));
   lines.push('');
   lines.push(formatOpenList(open));
