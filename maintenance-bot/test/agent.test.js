@@ -146,3 +146,13 @@ test('follow-up description joins the reporter\'s ticket; no number = no ticket'
   assert.equal(store.listTickets().length, 1);
   assert.ok(store.listUnrecognized().some((u) => u.text === 'הצ׳ילר לא מקרר'));
 });
+
+test('open-tickets report ends with how to answer', async () => {
+  const { buildDailySummary } = await import('../src/scheduler.js');
+  const store = openDb(':memory:');
+  store.createTicket({ title: 'תקלה בשסתום', machine: 'מכונה 447' });
+  const text = buildDailySummary(store);
+  assert.match(text, /#1 תוקן/);
+  assert.match(text, /447 הזמנתי חלק/);
+  assert.doesNotMatch(buildDailySummary(openDb(':memory:')), /לעדכון/);
+});

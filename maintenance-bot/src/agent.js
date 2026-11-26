@@ -22,9 +22,21 @@ export function ticketShort(t) {
   return `${PRIORITY_ICON[t.priority] || ''} #${t.id} ${t.machine ? t.machine + ' – ' : ''}${t.title} (${STATUS_HE[t.status]}${who}, ${age})`;
 }
 
-export function formatOpenList(tickets) {
+// Short "how to answer" footer, with examples taken from the first open ticket.
+export function howToAnswer(tickets) {
+  // Prefer a ticket on an injection machine / robot (plain 3-digit number) for the examples.
+  const t = tickets.find((x) => /\b\d{3}\b/.test(x.machine) && (!x.eq_type || ['injection', 'robot'].includes(x.eq_type))) || tickets[0];
+  const id = t?.id ?? 12;
+  const no = t?.machine?.match(/\d{3}/)?.[0] || '339';
+  return (
+    `✍️ לעדכון / סגירה – כותבים מספר קריאה או מכונה + מה נעשה (אין צורך ב-Reply):\n` +
+    `\`#${id} תוקן\` · \`${no} תוקן\` · \`${no} אני בדרך\` · \`${no} הזמנתי חלק\``
+  );
+}
+
+export function formatOpenList(tickets, { withHelp = false } = {}) {
   if (!tickets.length) return '✅ אין קריאות פתוחות.';
-  return `📋 קריאות פתוחות (${tickets.length}):\n` + tickets.map(ticketShort).join('\n');
+  return `📋 קריאות פתוחות (${tickets.length}):\n` + tickets.map(ticketShort).join('\n') + (withHelp ? `\n\n${howToAnswer(tickets)}` : '');
 }
 
 export const WELCOME_TEXT = `👋 שלום לכולם, אני בוט האחזקה (פיילוט).
@@ -175,7 +187,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
 
     // 2. Deterministic commands.
     if (/^!(פתוחות|open)(?=\s|$)/i.test(text)) {
-      return [{ type: 'reply', quoteId: msg.id, text: formatOpenList(store.openTickets()) }];
+      return [{ type: 'reply', quoteId: msg.id, text: formatOpenList(store.openTickets(), { withHelp: true }) }];
     }
     if (/^!(הנחיות|welcome)(?=\s|$)/i.test(text)) {
       return [{ type: 'reply', text: WELCOME_TEXT }];

@@ -2,6 +2,7 @@
 // Returns the same decision shape as the Claude classifier.
 import { IGNORE } from './classifier.js';
 import { formatOpenList } from './agent.js';
+import { detectEquipment } from './equipment.js';
 
 const has = (re, s) => re.test(s);
 
@@ -12,7 +13,7 @@ const PROGRESS = /(מטפל|בטיפול|בדרך|אני על זה|לוקח את
 const FIRST_PERSON = /(^|\s)(אני|אנחנו|לקחתי|הגעתי|אגיע|התחלתי|הזמנתי|תיקנתי|סיימתי|בודק|מטפל)(\s|$)/;
 const FAULT = /(תקלה|שרוף|שרופ|מקולקל|לא תקין|לא דולק|כבה|כבוי|חסום|סתום|לא יורד|לא עולה|תקול|לא עובד|לא עובדת|לא נדלק|לא נדלקת|נתקע|תקוע|דולף|דולפת|דליפ|נוזל|שבור|נשבר|נשברה|עצר|עוצר|עומדת|עומד|רעש|חם מדי|מתחמם|לא מקרר|לא מחמם|קצר|שריפ|עשן|ריח שרוף|אזעקה|התראה|alarm|error|שגיאה|לא תופס|לא סוגר|לא פותח|בעיה|לתקן|צריך טכנאי|צריך חשמלאי|קפץ|נפל|נפלה|נופל|מפיל|נופלות|סדוק|זורק|לא מוציא|לא שולף|לא מוריד|לא משחרר|משתחרר|רופף|מטפטף|טפטוף|נזיל|רנר|ראנר|ספרו|runner|sprue|גריפר|תפסנית|ואקום|וקום|הוט ראנר|hot runner|פלאש|flash|שורט|short|חסר מילוי|בועות|שקיעות|עיוות|נקודות שחורות|חוטים|פין שבור|פינים|נקרע|לחץ נמוך|לחץ גבוה|ברז|פיצוץ)/i;
 const URGENT = /(עצר|עוצר|עומדת|עומד|דחוף|מיידי|מייד|שריפ|עשן|קצר|חשמל|דליפ|דולף|בטיחות|סכנה|פציע|נפגע|השבת|ייצור עומד|קו עומד)/;
-const LOW = /(לא דחוף|כשיתפנה|כשיהיה זמן|נורה|ניקיון|צבע|שלט|קוסמטי)/;
+const LOW = /(לא דחוף|כשיתפנה|כשיהיה זמן|נורה|ניקיון|שלט|קוסמטי)/;
 const NEW_HINT = /(עוד תקלה|תקלה נוספת|תקלה חדשה|בעיה נוספת|בנוסף)/;
 // Phrases that contain a fault word but mean the opposite ("no problem").
 const NOT_FAULT = /(אין בעיה|אין בעיות|בלי בעיה|לא בעיה|אין תקלה|אין תקלות|ללא תקלות)/g;
@@ -80,6 +81,14 @@ export function createRulesClassifier() {
 
     // Which existing ticket is this about?
     let ticketId = replyToTicket || 0;
+    // "ממנן 21 תוקן", "תנור 705 בטיפול": match the open ticket of that exact equipment.
+    if (!ticketId && !NEW_HINT.test(t)) {
+      const eq = detectEquipment(t, machine);
+      if (eq.type && eq.type !== 'injection' && eq.number) {
+        const match = openTickets.filter((x) => x.eq_type === eq.type && x.eq_number === eq.number);
+        if (match.length === 1) ticketId = match[0].id;
+      }
+    }
     if (!ticketId && machine && !NEW_HINT.test(t)) {
       const nums = machine.match(/\d+/g) || [];
       const match = openTickets.filter(

@@ -59,3 +59,16 @@ test('tickets opened before the equipment feature are linked on start and on imp
   store.replaceEquipment(parseEquipmentRows(ROWS));
   assert.equal(store.getTicket(1).eq_sku, 'ERT-T339');
 });
+
+test('update and close by equipment type + 2-digit number', async () => {
+  const store = openDb(':memory:');
+  store.replaceEquipment(parseEquipmentRows(ROWS));
+  const agent = createAgent({ store, classify: createRulesClassifier(), logger: { info() {}, warn() {}, error() {} } });
+  const m = (id, text, phone) => ({ id, text, sender: 'x', senderPhone: phone, quotedId: null, media: null });
+  await agent.handleMessage(m('1', "ממנן צבע מס' 21 לא עובד", '1'));
+  assert.equal(store.getTicket(1).priority, 'normal');
+  await agent.handleMessage(m('2', 'ממנן 21 אני בדרך', '2'));
+  assert.equal(store.getTicket(1).status, 'in_progress');
+  await agent.handleMessage(m('3', 'ממנן 21 תוקן', '2'));
+  assert.equal(store.getTicket(1).status, 'closed');
+});

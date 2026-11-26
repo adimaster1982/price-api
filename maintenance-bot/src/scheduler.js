@@ -7,7 +7,7 @@ export function buildDailySummary(store) {
   const lines = [`☀️ דוח בוקר – אחזקה`];
   lines.push(`ב-24 שעות אחרונות: נפתחו ${s.opened} · נסגרו ${s.closed}` + (s.mttrHours != null ? ` · זמן טיפול ממוצע ${formatDuration(s.mttrHours * 3_600_000)}` : ''));
   lines.push('');
-  lines.push(formatOpenList(open));
+  lines.push(formatOpenList(open, { withHelp: true }));
   return lines.join('\n');
 }
 
