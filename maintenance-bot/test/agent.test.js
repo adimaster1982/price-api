@@ -62,8 +62,8 @@ test('update to unknown ticket is skipped, ignore produces nothing', async () =>
 });
 
 test('caption-less photo attaches to the sender\'s recent ticket', async () => {
-  const { store, agent } = setup([{ action: 'new_ticket', title: 'צ\'ילר לא מקרר', machine: 'צ\'ילר' }]);
-  await agent.handleMessage(msg('p0', 'הצ\'ילר לא מקרר'));
+  const { store, agent } = setup([{ action: 'new_ticket', title: 'צ\'ילר 2 לא מקרר', machine: 'צ\'ילר 2' }]);
+  await agent.handleMessage(msg('p0', 'הצ\'ילר 2 לא מקרר'));
   const [r] = await agent.handleMessage(msg('p1', '', { media: { kind: 'image', path: 'p1.jpg' } }));
   assert.equal(r.type, 'react');
   assert.ok(store.events(1).some((e) => e.media_path === 'p1.jpg'));
@@ -124,4 +124,25 @@ test('react mode: no text in the group, only emoji reactions', async () => {
   assert.equal(c.emoji, '✅');
   assert.equal(store.getTicket(1).status, 'closed');
   assert.ok(store.getTicket(1).closed_at, 'close time is still recorded for the reports');
+});
+
+test('follow-up description joins the reporter\'s ticket; no number = no ticket', async () => {
+  const { createRulesClassifier } = await import('../src/rules-classifier.js');
+  const store = openDb(':memory:');
+  const agent = createAgent({ store, classify: createRulesClassifier(), logger: quiet });
+  const m = (id, text, phone = '972500000001', sender = 'יוסי') => ({ id, text, sender, senderPhone: phone, quotedId: null, media: null });
+
+  await agent.handleMessage(m('a1', '452 תקלה במכונה'));
+  const [r] = await agent.handleMessage(m('a2', 'הרובוט לא מוציא את החלק מהתבנית'));
+  assert.equal(r.emoji, '👍');
+  const t = store.getTicket(1);
+  assert.equal(store.listTickets().length, 1, 'no second ticket');
+  assert.match(t.title, /452 תקלה במכונה – הרובוט לא מוציא/);
+  assert.equal(t.eq_type, 'robot'); assert.equal(t.eq_number, '452');
+  assert.equal(t.category, 'robot');
+
+  // Someone else writing a fault without a number: nothing opens.
+  assert.deepEqual(await agent.handleMessage(m('b1', 'הצ׳ילר לא מקרר', '972500000002', 'משה')), []);
+  assert.equal(store.listTickets().length, 1);
+  assert.ok(store.listUnrecognized().some((u) => u.text === 'הצ׳ילר לא מקרר'));
 });

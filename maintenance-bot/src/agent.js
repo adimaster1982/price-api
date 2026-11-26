@@ -31,8 +31,10 @@ export const WELCOME_TEXT = `👋 שלום לכולם, אני בוט האחזק�
 מעכשיו כל תקלה שנכתבת כאן נפתחת אצלי כקריאה עם מספר.
 
 *איך פותחים קריאה:*
-כותבים *מספר מכונה + מה הבעיה*
-למשל: \`339 מפיל מוצרים\` · \`447 תקלה בשסתום, מכונה נעצרת\`
+כותבים *מספר מכונה / ציוד + מה הבעיה*
+למשל: \`339 מפיל מוצרים\` · \`447 תקלה בשסתום\` · \`תנור 705 לא מחמם\`
+⚠️ בלי מספר מכונה או ציוד – לא נפתחת קריאה.
+פרטים נוספים – אפשר בהודעה נפרדת מיד אחרי (עד 15 דקות), או ב-Reply להודעה.
 תמונה – עם כיתוב של מספר מכונה ובעיה.
 
 *עדכון:* עונים (Reply) להודעה המקורית של התקלה, למשל "הזמנתי חלק" / "אני בדרך"
@@ -61,7 +63,37 @@ const STATUS_EMOJI = { open: '📝', in_progress: '🔧', waiting_parts: '⏳', 
  * feedback: 'react' – only an emoji reaction on the worker's message (default, keeps the group clean)
  *           'messages' – a text reply for every open / status change / close
  */
-export function createAgent({ store, classify, logger = console, recentSize = 8, pendingMinutes = 30, askEveryMinutes = 5, feedback = 'react' }) {
+export function createAgent({ store, classify, logger = console, recentSize = 8, pendingMinutes = 30, askEveryMinutes = 5, feedback = 'react', followupMinutes = 15 }) {
+  // Does the message name a machine / equipment number? Without one no ticket is opened.
+  const hasEquipmentNumber = (text, machine = '') => /\d/.test(machine) || !!detectEquipment(text, machine).number;
+
+  /**
+   * A follow-up message from the reporter ("452 תקלה במכונה" … then "הרובוט לא מוציא את החלק"):
+   * add it to the ticket, enrich a short title, and refine category / equipment / priority.
+   */
+  function addDescription(ticket, msg, text, decision) {
+    store.addEvent(ticket.id, 'update', msg.sender, text);
+    store.linkMessage(msg.id, ticket.id);
+    attachMedia(ticket.id, msg);
+    flushPending(msg.senderPhone, ticket.id);
+    const fields = {};
+    if (ticket.title.length <= 30 && !ticket.title.includes(text)) fields.title = `${ticket.title} – ${text}`.slice(0, 120);
+    const combined = `${ticket.title} ${text}`;
+    if (!ticket.category || ticket.category === 'other') fields.category = categorize(combined);
+    if (decision?.priority === 'urgent' && ticket.priority !== 'urgent') fields.priority = 'urgent';
+    if (Object.keys(fields).length) store.updateTicket(ticket.id, fields, msg.sender);
+    // "452 תקלה במכונה" + "הרובוט לא מוציא" -> the robot of machine 452.
+    if (!ticket.eq_type || ticket.eq_type === 'injection') {
+      const eq = detectEquipment(combined, ticket.machine);
+      if (eq.type && eq.type !== ticket.eq_type) store.setTicketEquipment(ticket.id, eq.type, eq.number || ticket.eq_number);
+    }
+    return [
+      feedback === 'messages'
+        ? { type: 'reply', quoteId: msg.id, ticketId: ticket.id, text: `📝 התיאור נוסף לקריאה #${ticket.id}` }
+        : { type: 'react', emoji: '👍', msgId: msg.id },
+    ];
+  }
+
   // Acknowledge a ticket change: emoji on the message, or a text reply.
   const ack = (msgId, status, ticketId, text) =>
     feedback === 'messages'
@@ -176,6 +208,18 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
     remember(msg.sender, text);
     logger.info?.(`[agent] ${msg.sender}: "${text.slice(0, 60)}" -> ${decision.action} #${decision.ticket_id || '-'}`);
 
+    // The reporter's own ticket from the last few minutes (for follow-up descriptions without Reply).
+    const numbered = hasEquipmentNumber(text, decision.machine || '');
+    const recentOwn = !hintedTicket && !numbered ? store.lastTicketBy(msg.senderPhone, followupMinutes) : null;
+
+    if (decision.action === 'new_ticket' && !numbered) {
+      if (recentOwn) return addDescription(recentOwn, msg, text, decision);
+      // No machine / equipment number: don't open a ticket (kept in the "not recognised" list).
+      store.addUnrecognized(text, msg.sender, !!msg.media);
+      if (msg.media) return addPending(msg) ? [{ type: 'reply', quoteId: msg.id, text: ASK_DETAILS(msg.media.kind) }] : [];
+      return [];
+    }
+
     if (decision.action === 'ignore') {
       if (text.length >= 4) store.addUnrecognized(text, msg.sender, !!msg.media);
       // A photo with a caption that doesn't say machine/problem: ask, like a caption-less photo.
@@ -222,7 +266,7 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
     }
 
     // update / status_change / close need an existing active ticket.
-    const ticket = activeTicket(decision.ticket_id) || activeTicket(hintedTicket);
+    const ticket = activeTicket(decision.ticket_id) || activeTicket(hintedTicket) || recentOwn;
     if (!ticket) {
       logger.warn?.(`[agent] ${decision.action} without a matching open ticket – skipped`);
       return [];
