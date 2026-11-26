@@ -28,6 +28,13 @@ export const config = {
   // Dashboard
   dashboardUser: env.DASHBOARD_USER || 'admin',
   dashboardPass: env.DASHBOARD_PASS || '',
+  // Extra dashboard users: "manager:1234,yossi:5678" (name:password, comma separated)
+  dashboardUsers: (env.DASHBOARD_USERS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.includes(':'))
+    .map((s) => [s.slice(0, s.indexOf(':')).trim(), s.slice(s.indexOf(':') + 1).trim()])
+    .filter(([u, p]) => u && p),
   publicUrl: env.PUBLIC_URL || '',
 
   // Escalation (hours)

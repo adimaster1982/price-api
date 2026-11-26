@@ -28,7 +28,14 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
     const [scheme, encoded] = (req.headers.authorization || '').split(' ');
     if (scheme === 'Basic' && encoded) {
       const [user, ...rest] = Buffer.from(encoded, 'base64').toString().split(':');
-      if (safeEqual(user, config.dashboardUser) && safeEqual(rest.join(':'), config.dashboardPass)) return next();
+      const pass = rest.join(':');
+      const users = [[config.dashboardUser, config.dashboardPass], ...config.dashboardUsers];
+      // Check every entry (no early exit) to keep timing uniform.
+      const ok = users.reduce((acc, [u, p]) => (safeEqual(user, u) & safeEqual(pass, p)) | acc, 0);
+      if (ok) {
+        req.who = `לוח בקרה (${user})`; // shown in the ticket history
+        return next();
+      }
     }
     res.set('WWW-Authenticate', 'Basic realm="maintenance"').status(401).send('Authentication required');
   });
@@ -70,10 +77,10 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
     const before = store.getTicket(req.params.id);
     if (!before) return res.status(404).json({ error: 'not found' });
     const { title, machine, priority, status, assignee, category, announce, eq_type, eq_number } = req.body || {};
-    let t = store.updateTicket(before.id, { title, machine, priority, status, assignee, category }, 'לוח בקרה');
+    let t = store.updateTicket(before.id, { title, machine, priority, status, assignee, category }, req.who);
     if (eq_type !== undefined && (eq_type !== before.eq_type || String(eq_number ?? '') !== before.eq_number)) {
       store.setTicketEquipment(before.id, eq_type, eq_number);
-      store.addEvent(before.id, 'change', 'לוח בקרה', `ציוד: ${equipmentLabel({ eq_type, eq_number }) || '—'}`);
+      store.addEvent(before.id, 'change', req.who, `ציוד: ${equipmentLabel({ eq_type, eq_number }) || '—'}`);
       t = store.getTicket(before.id);
     }
     const groupId = getGroupId();
@@ -95,17 +102,17 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
   app.post('/api/tickets', (req, res) => {
     const { title, machine, priority, assignee } = req.body || {};
     if (!title) return res.status(400).json({ error: 'title required' });
-    res.json(store.createTicket({ title, machine, priority, assignee, reporter: 'לוח בקרה' }));
+    res.json(store.createTicket({ title, machine, priority, assignee, reporter: req.who }));
   });
 
   app.delete('/api/tickets/:id', (req, res) => {
-    const t = store.deleteTicket(req.params.id, 'לוח בקרה', String(req.body?.reason || ''));
+    const t = store.deleteTicket(req.params.id, req.who, String(req.body?.reason || ''));
     if (!t) return res.status(404).json({ error: 'not found' });
     res.json(t);
   });
 
   app.post('/api/tickets/:id/restore', (req, res) => {
-    const t = store.restoreTicket(req.params.id, 'לוח בקרה');
+    const t = store.restoreTicket(req.params.id, req.who);
     if (!t) return res.status(404).json({ error: 'not found' });
     res.json(t);
   });
@@ -113,7 +120,7 @@ export function createWeb({ store, config, wa, getGroupId, setGroupId, logger = 
   app.post('/api/tickets/:id/notes', (req, res) => {
     const t = store.getTicket(req.params.id);
     if (!t || !req.body?.text) return res.status(400).json({ error: 'bad request' });
-    store.addEvent(t.id, 'note', req.body.author || 'לוח בקרה', String(req.body.text));
+    store.addEvent(t.id, 'note', req.who, String(req.body.text));
     res.json({ ok: true });
   });
 

@@ -162,7 +162,7 @@ export class Store {
     let extra = '';
     const status = changes.find(([k]) => k === 'status')?.[1];
     // Who closed it: the WhatsApp sender; a dashboard close keeps the assignee as the handler.
-    const closer = author && author !== 'לוח בקרה' ? author : '';
+    const closer = author && !author.startsWith('לוח בקרה') ? author : '';
     if (status === 'closed') extra = ', closed_at = ?, closed_by = ?';
     else if (status) extra = ", closed_at = NULL, escalated_at = NULL, closed_by = ''";
     const params = [...values, t, ...(status === 'closed' ? [t, closer] : []), Number(id)];
