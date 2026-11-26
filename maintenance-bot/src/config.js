@@ -24,6 +24,8 @@ export const config = {
 
   // Group feedback: 'react' = emoji on the message only (default), 'messages' = text reply per open/close
   groupFeedback: env.GROUP_FEEDBACK === 'messages' ? 'messages' : 'react',
+  // "קריאות" in the group: 'private' = list sent privately to whoever asked (default), 'group' = reply in the group
+  listReply: env.LIST_REPLY === 'group' ? 'group' : 'private',
 
   // Dashboard
   dashboardUser: env.DASHBOARD_USER || 'admin',

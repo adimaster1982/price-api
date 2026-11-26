@@ -55,13 +55,15 @@ export const WELCOME_TEXT = `👋 שלום לכולם, אני בוט האחזק�
 על פתיחה, עדכון וסגירה הבוט לא כותב – רק מסמן על ההודעה:
 📝 נרשמה · 🔧 בטיפול · ⏳ ממתינה לחלק · ✅ נסגרה
 
-*פקודות:* קריאות (רשימת הפתוחות) · קריאה 12 · עזרה`;
+*פקודות:* קריאות (רשימת הפתוחות – נשלחת אליכם בפרטי) · קריאה 12 · עזרה
+אפשר גם לשלוח לבוט הודעה פרטית: *קריאות*`;
 
 export const HELP_TEXT = `🤖 בוט האחזקה
 • לפתיחת קריאה – פשוט כתבו את התקלה (למשל: "מכונה 7 דולפת שמן, עצרה ייצור").
 • תמונה – רצוי עם כיתוב: מספר מכונה ומה הבעיה.\n• לעדכון – ענו (Reply) להודעה המקורית של התקלה, או כתבו #מספר.
 • לסגירה – ענו "תוקן" / "סגור".
-• פקודות: קריאות (רשימת הפתוחות) · קריאה 12 · סגור 12 · הנחיות · עזרה
+• פקודות: קריאות (רשימת הפתוחות – נשלחת אליכם בפרטי) · קריאה 12 · סגור 12 · הנחיות · עזרה
+• אפשר גם לשלוח לבוט בפרטי: קריאות · קריאה 12
 • אפשר גם לשאול: "מה פתוח על מכונה 12?"`;
 
 const ASK_DETAILS = (kind) =>
@@ -75,7 +77,26 @@ const STATUS_EMOJI = { open: '📝', in_progress: '🔧', waiting_parts: '⏳', 
  * feedback: 'react' – only an emoji reaction on the worker's message (default, keeps the group clean)
  *           'messages' – a text reply for every open / status change / close
  */
-export function createAgent({ store, classify, logger = console, recentSize = 8, pendingMinutes = 30, askEveryMinutes = 5, feedback = 'react', followupMinutes = 15 }) {
+/**
+ * Read-only commands that also work in a private chat with the bot.
+ * Returns the reply text, or null when the text is not such a command.
+ */
+export function privateCommand(store, text) {
+  let cmd = String(text || '').replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim();
+  cmd = cmd.replace(/^!+|!+$/g, '').trim();
+  if (/^(קריאות|פתוחות|open)$/i.test(cmd)) return formatOpenList(store.openTickets(), { withHelp: true });
+  const show = cmd.match(/^(?:קריאה|ticket)\s*#?(\d+)$/i);
+  if (show) {
+    const t = store.getTicket(Number(show[1]));
+    if (!t || t.deleted_at) return `לא נמצאה קריאה #${show[1]}`;
+    const hist = store.events(t.id).slice(-8).map((e) => `• ${e.created_at.slice(5, 16).replace('T', ' ')} ${e.author}: ${e.text}`).join('\n');
+    return `${ticketShort(t)}\n${hist}`;
+  }
+  if (/^(עזרה|help)$/i.test(cmd)) return HELP_TEXT;
+  return null;
+}
+
+export function createAgent({ store, classify, logger = console, recentSize = 8, pendingMinutes = 30, askEveryMinutes = 5, feedback = 'react', followupMinutes = 15, listReply = 'private' }) {
   // Does the message name a machine / equipment number? Without one no ticket is opened.
   const hasEquipmentNumber = (text, machine = '') => /\d/.test(machine) || !!detectEquipment(text, machine).number;
 
@@ -191,7 +212,11 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
     if (!cmd.startsWith('!') && cmd.endsWith('!')) cmd = '!' + cmd.replace(/!+$/, '').trim();
     if (/^(קריאות|פתוחות|עזרה|הנחיות)$/.test(cmd)) cmd = '!' + cmd;
     if (/^!(קריאות|פתוחות|open)(?=\s|$)/i.test(cmd)) {
-      return [{ type: 'reply', quoteId: msg.id, text: formatOpenList(store.openTickets(), { withHelp: true }) }];
+      const list = formatOpenList(store.openTickets(), { withHelp: true });
+      // Default: send the list privately to whoever asked, and only mark 📩 in the group.
+      return listReply === 'private'
+        ? [{ type: 'private', text: list }, { type: 'react', emoji: '📩', msgId: msg.id }]
+        : [{ type: 'reply', quoteId: msg.id, text: list }];
     }
     if (/^!(הנחיות|welcome)(?=\s|$)/i.test(cmd)) {
       return [{ type: 'reply', text: WELCOME_TEXT }];

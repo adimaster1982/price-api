@@ -40,9 +40,11 @@ function extract(m) {
   return { text, quotedId: ctx?.stanzaId || null, mediaKind };
 }
 
+const userPart = (jid) => String(jid).split('@')[0].split(':')[0];
+
 const EXT = { image: 'jpg', audio: 'ogg', video: 'mp4', document: 'bin' };
 
-export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessage, onConnected = () => {}, logger = console }) {
+export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessage, onPrivate = async () => {}, onConnected = () => {}, logger = console }) {
   const authDir = path.join(dataDir, 'wa-auth');
   const mediaDir = path.join(dataDir, 'media');
   fs.mkdirSync(mediaDir, { recursive: true });
@@ -114,6 +116,12 @@ export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessag
       for (const raw of messages) {
         try {
           if (!raw.message || raw.key.fromMe) continue;
+          // Private chat with the bot (commands only, handled by onPrivate).
+          if (/@(s\.whatsapp\.net|lid)$/.test(raw.key.remoteJid || '')) {
+            const { text } = extract(unwrap(raw.message));
+            if (text) await onPrivate({ jid: raw.key.remoteJid, altJid: raw.key.remoteJidAlt || '', text, sender: raw.pushName || '' });
+            continue;
+          }
           if (!groupId) {
             logger.warn('[wa] message ignored: no group selected yet – choose the group in the dashboard');
             continue;
@@ -142,6 +150,8 @@ export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessag
           await onMessage({
             id: raw.key.id,
             key: raw.key,
+            senderJid: raw.key.participant || '',
+            senderAltJid: raw.key.participantAlt || '',
             raw,
             text,
             quotedId,
@@ -167,6 +177,19 @@ export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessag
     await state.sock.sendMessage(jid, { react: { text: emoji, key } });
   }
 
+  // Group membership, cached for 10 minutes (to answer private commands only to group members).
+  let members = { at: 0, groupId: '', ids: new Set() };
+  async function isGroupMember(groupId, jids) {
+    if (!state.sock || !state.connected || !groupId) return false;
+    if (members.groupId !== groupId || Date.now() - members.at > 10 * 60_000) {
+      const meta = await state.sock.groupMetadata(groupId);
+      const ids = new Set();
+      for (const p of meta.participants || []) for (const j of [p.id, p.lid, p.phoneNumber]) if (j) ids.add(userPart(j));
+      members = { at: Date.now(), groupId, ids };
+    }
+    return jids.filter(Boolean).some((j) => members.ids.has(userPart(j)));
+  }
+
   async function listGroups() {
     if (!state.sock || !state.connected) return [];
     const groups = await state.sock.groupFetchAllParticipating();
@@ -175,5 +198,5 @@ export function startWhatsApp({ dataDir, pairingPhone = '', getGroupId, onMessag
 
   connect().catch((e) => logger.error('[wa] initial connect failed', e));
 
-  return { state, sendText, react, listGroups, mediaDir };
+  return { state, sendText, react, listGroups, isGroupMember, mediaDir };
 }

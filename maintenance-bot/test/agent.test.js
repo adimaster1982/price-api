@@ -164,6 +164,15 @@ test('commands work with "!" at the start, at the end, or without it', async () 
     const [r] = await agent.handleMessage(msg('c' + t, t));
     assert.match(r.text, /קריאות פתוחות \(1\)/, t);
   }
+  // Default (not the 'messages' test setup): list goes privately + 📩 in the group.
+  const priv = createAgent({ store, classify: async () => IGNORE, logger: quiet });
+  const [p1, p2] = await priv.handleMessage(msg('pv', 'קריאות'));
+  assert.equal(p1.type, 'private'); assert.match(p1.text, /קריאות פתוחות/);
+  assert.deepEqual(p2, { type: 'react', emoji: '📩', msgId: 'pv' });
+  const { privateCommand } = await import('../src/agent.js');
+  assert.match(privateCommand(store, 'קריאות!'), /קריאות פתוחות \(1\)/);
+  assert.match(privateCommand(store, 'קריאה 1'), /#1/);
+  assert.equal(privateCommand(store, 'סגור 1'), null, 'closing stays in the group');
   const [x] = await agent.handleMessage(msg('k', 'קריאה 1!'));
   assert.match(x.text, /#1/);
   const [y] = await agent.handleMessage(msg('s', 'סגור 1!'));
