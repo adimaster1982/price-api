@@ -160,7 +160,7 @@ test('open-tickets report ends with how to answer', async () => {
 test('commands work with "!" at the start, at the end, or without it', async () => {
   const { store, agent, calls } = setup([]);
   store.createTicket({ title: 'תקלה', machine: 'מכונה 447' });
-  for (const t of ['!פתוחות', 'פתוחות!', 'פתוחות', '\u200fפתוחות!']) {
+  for (const t of ['קריאות', 'קריאות!', '!קריאות', '\u200fקריאות!', 'פתוחות']) {
     const [r] = await agent.handleMessage(msg('c' + t, t));
     assert.match(r.text, /קריאות פתוחות \(1\)/, t);
   }

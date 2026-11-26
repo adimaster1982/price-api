@@ -55,13 +55,13 @@ export const WELCOME_TEXT = `👋 שלום לכולם, אני בוט האחזק�
 על פתיחה, עדכון וסגירה הבוט לא כותב – רק מסמן על ההודעה:
 📝 נרשמה · 🔧 בטיפול · ⏳ ממתינה לחלק · ✅ נסגרה
 
-*פקודות:* !פתוחות · !קריאה 12 · !עזרה`;
+*פקודות:* קריאות (רשימת הפתוחות) · קריאה 12 · עזרה`;
 
 export const HELP_TEXT = `🤖 בוט האחזקה
 • לפתיחת קריאה – פשוט כתבו את התקלה (למשל: "מכונה 7 דולפת שמן, עצרה ייצור").
 • תמונה – רצוי עם כיתוב: מספר מכונה ומה הבעיה.\n• לעדכון – ענו (Reply) להודעה המקורית של התקלה, או כתבו #מספר.
 • לסגירה – ענו "תוקן" / "סגור".
-• פקודות: !פתוחות · !קריאה 12 · !סגור 12 · !הנחיות · !עזרה
+• פקודות: קריאות (רשימת הפתוחות) · קריאה 12 · סגור 12 · הנחיות · עזרה
 • אפשר גם לשאול: "מה פתוח על מכונה 12?"`;
 
 const ASK_DETAILS = (kind) =>
@@ -185,12 +185,12 @@ export function createAgent({ store, classify, logger = console, recentSize = 8,
       return [{ type: 'react', emoji: '📎', msgId: msg.id }];
     }
 
-    // 2. Deterministic commands. In Hebrew the "!" often lands at the end ("פתוחות!"), and the
-    //    one-word commands also work without it ("פתוחות").
+    // 2. Deterministic commands. In Hebrew the "!" often lands at the end ("קריאות!"), and the
+    //    one-word commands also work without it ("קריאות"). "פתוחות" is kept as an alias.
     let cmd = text.replace(/[\u200e\u200f\u202a-\u202e]/g, '').trim();
     if (!cmd.startsWith('!') && cmd.endsWith('!')) cmd = '!' + cmd.replace(/!+$/, '').trim();
-    if (/^(פתוחות|עזרה|הנחיות)$/.test(cmd)) cmd = '!' + cmd;
-    if (/^!(פתוחות|open)(?=\s|$)/i.test(cmd)) {
+    if (/^(קריאות|פתוחות|עזרה|הנחיות)$/.test(cmd)) cmd = '!' + cmd;
+    if (/^!(קריאות|פתוחות|open)(?=\s|$)/i.test(cmd)) {
       return [{ type: 'reply', quoteId: msg.id, text: formatOpenList(store.openTickets(), { withHelp: true }) }];
     }
     if (/^!(הנחיות|welcome)(?=\s|$)/i.test(cmd)) {
